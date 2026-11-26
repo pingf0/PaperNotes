@@ -241,6 +241,8 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('模型列表：自定义模型出现在会话可选项里', Boolean(custom && custom.models.some((item) => item.id === 'm-kimi')), JSON.stringify(custom));
   const dirs = await json('/fs/list');
   check('目录浏览：返回子目录与父目录', Array.isArray(dirs.payload.dirs) && typeof dirs.payload.path === 'string', dirs.payload.path);
+  const pick = await json('/fs/pick-directory', { method: 'POST' });
+  check('系统目录对话框：无 Electron 时优雅回 501', pick.status === 501 || pick.status === 200, String(pick.status));
   const bad = await json('/settings/test', { method: 'POST', body: { baseUrl: '', model: '' } });
   check('设置：测试连接缺参数时报错', bad.status === 400, JSON.stringify(bad.payload));
 }

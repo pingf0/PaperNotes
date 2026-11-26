@@ -7,6 +7,7 @@
  *   - 失败一律 { error } + 合适的 status，前端展示原文，不吞错。
  */
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -480,6 +481,32 @@ export function createServer(ctx, prefix) {
           });
         } catch (error) {
           return sendJson(res, 400, { error: `读不了这个目录：${error instanceof Error ? error.message : String(error)}` });
+        }
+      }
+
+      if (path === '/fs/pick-directory' && method === 'POST') {
+        // 优先用系统原生的"选择文件夹"对话框（Electron 主进程里可用）；
+        // 拿不到就回 501，前端退回内置的目录浏览器。
+        try {
+          const require = createRequire(import.meta.url);
+          const electron = require('electron');
+          const dialog = electron?.dialog;
+          if (!dialog || typeof dialog.showOpenDialog !== 'function') {
+            return sendJson(res, 501, { error: '当前宿主没有系统目录对话框' });
+          }
+          const windows = electron.BrowserWindow?.getAllWindows?.() ?? [];
+          const win = electron.BrowserWindow?.getFocusedWindow?.() ?? windows[0];
+          const result = win
+            ? await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], title: '选择数据目录' })
+            : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], title: '选择数据目录' });
+          if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+            return sendJson(res, 200, { canceled: true });
+          }
+          return sendJson(res, 200, { path: result.filePaths[0] });
+        } catch (error) {
+          return sendJson(res, 501, {
+            error: `系统对话框不可用：${error instanceof Error ? error.message : String(error)}`,
+          });
         }
       }
 

@@ -773,8 +773,9 @@ await page.waitForTimeout(200);
   if ((await page.locator('.pd-model-row').count()) === 0) errors.push('添加模型后列表里没有出现');
   await shot('02e-settings-models');
   await page.locator('.pd-tabs-inset .pd-tab', { hasText: '数据目录' }).click();
+  // 预览环境没有 Electron：应该优雅退回内置目录浏览器
   await page.getByRole('button', { name: '选择…' }).click();
-  await page.waitForSelector('.pd-dir-picker');
+  await page.waitForSelector('.pd-dir-picker', { timeout: 8000 }).catch(() => errors.push('「选择…」没有打开目录选择器'));
   const listedPath = await page.locator('.pd-dir-path').innerText();
   if (!/[\\/]/.test(listedPath)) errors.push('目录选择器没有显示绝对路径：' + listedPath);
   // 先在当前目录看看，再上跳一级（home 下必然有子目录）

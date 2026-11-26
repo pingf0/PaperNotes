@@ -400,7 +400,10 @@ export const CSS = `
 .pd-card-detail .pd-field-label { margin: 10px 0 4px; }
 
 .pd-tabs-inset { padding: 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l1, #eee); }
-.pd-settings-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 70vh; }
+.pd-settings-body {
+  padding: 18px 22px; display: flex; flex-direction: column; gap: 14px;
+  overflow-y: auto; max-height: 72vh; min-height: 220px;
+}
 .pd-row { display: flex; align-items: center; gap: 8px; }
 .pd-row-end { justify-content: flex-end; }
 .pd-model-row {

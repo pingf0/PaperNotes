@@ -611,7 +611,22 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
         React.createElement('input', { className: 'pd-input', value, onChange: (event) => setValue(event.target.value) }),
         React.createElement(
           'button',
-          { className: 'pd-btn', onClick: () => setPicking(true) },
+          {
+            className: 'pd-btn',
+            onClick: async () => {
+              try {
+                const picked = await api.pickDirectory();
+                if (picked?.path) {
+                  setValue(picked.path);
+                  return;
+                }
+                if (picked?.canceled) return;
+              } catch {
+                /* 旧宿主 / 无系统对话框：退回内置浏览器 */
+              }
+              setPicking(true);
+            },
+          },
           '选择…',
         ),
       ),
@@ -876,7 +891,7 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
     {
       title: '设置',
       onClose,
-      width: 760,
+      width: 900,
       footer: [
         React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '关闭'),
         React.createElement('button', { key: 's', className: 'pd-btn pd-btn-primary', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
