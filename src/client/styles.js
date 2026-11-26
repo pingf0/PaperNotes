@@ -188,6 +188,19 @@ export const CSS = `
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pd-node-meta { font-size: 10.5px; color: var(--dsw-alias-label-tertiary, #9a9a9a); margin-bottom: 4px; }
+/* 公式节点：作用在原理图的哪一部分 */
+.pd-node-where {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin-top: 4px; font-size: 11px; line-height: 1.55;
+  color: var(--dsw-alias-label-secondary, #5f5f5f);
+}
+.pd-where-link {
+  border: 0; padding: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 11px; line-height: 1.55;
+  color: var(--dsw-alias-brand-primary, #1f5fd0);
+  text-decoration: underline dotted;
+}
+.pd-where-link:hover { text-decoration: underline solid; }
 /* 图库：缩略图网格（之前没有样式，图片会按原始尺寸把弹窗撑爆） */
 .pd-figure-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
 .pd-figure-option {

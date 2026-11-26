@@ -67,7 +67,7 @@ const paper1 = {
   blocks: [
     { id: 'b-motivation', type: 'motivation', title: '解决的问题与动机', text: '该式将跨域融合序列、混合域序列和用户或混合域表示加权组合。α、β、γ为可学习权重。\\mathbf{z}_u^{final}随后用于计算目标item的偏好得分。神经网络顺序学习多个任务时会灾难性遗忘：新任务一训练，旧任务的性能就塌掉。但很多场景（隐私、存储、算力）不允许保留旧数据做联合训练，所以需要一种“不回放旧数据”的持续学习办法。', x: 40, y: 32, w: 300 },
     { id: 'b-principle', type: 'principle', title: '核心原理：重要权重别乱动', text: '该式将跨域融合序列、混合域序列和用户或混合域表示加权组合。α、β、γ为可学习权重。\\mathbf{z}_u^{final}随后用于计算目标item的偏好得分。\n\n把“参数有多重要”量化为 Fisher 信息矩阵的对角元：对旧任务输出影响大的参数，惩罚系数就大。训练新任务时在损失里加一项 Σ F_i (θ_i - θ*_i)²，让重要参数留在旧值附近，不重要的参数自由迁移。多个任务依次到来时，各项惩罚累加，等价于在高斯近似下做贝叶斯后验更新。', figureId: 'f-1', x: 40, y: 330, w: 340 },
-    { id: 'b-formula-1', type: 'formula', title: 'EWC 损失', latex: 'L(θ) = L_B(θ) + Σ_i (λ/2) F_i (θ_i - θ*_{A,i})²', section: '3.2 Method', text: '第一项是新任务的损失，第二项是约束项；λ 控制“记住旧任务”和“学好新任务”的权衡。', x: 450, y: 32, w: 300 },
+    { id: 'b-formula-1', type: 'formula', title: 'EWC 损失', latex: 'L(θ) = L_B(θ) + Σ_i (λ/2) F_i (θ_i - θ*_{A,i})²', section: '3.2 Method', where: '训练损失那一支（惩罚项）', figureRef: 'f-1', text: '第一项是新任务的损失，第二项是约束项；λ 控制“记住旧任务”和“学好新任务”的权衡。', x: 450, y: 32, w: 300 },
     { id: 'b-formula-2', type: 'formula', title: 'Fisher 信息', latex: 'F_i = E[(∂/∂θ_i log p(y|x,θ))²]', text: 'Fisher 信息衡量第 i 个参数对似然的敏感度，这里用训练集上的经验值近似，只取对角（省算力）。', x: 450, y: 312, w: 300 },
     { id: 'b-result-1', type: 'result', title: '在 permuted MNIST 上几乎不遗忘', text: '三个随机置换任务依次训练后，EWC 在每个任务上的准确率都保持在 90% 以上，而普通 SGD 会掉到随机水平。', figureId: 'f-2', x: 860, y: 330, w: 300 },
   ],
@@ -119,7 +119,7 @@ const paper2 = {
   blocks: [
     { id: 'b-motivation', type: 'motivation', title: '解决的问题与动机', text: '该式将跨域融合序列、混合域序列和用户或混合域表示加权组合。α、β、γ为可学习权重。\\mathbf{z}_u^{final}随后用于计算目标item的偏好得分。参数共享式的持续学习要么遗忘、要么容量受限。能不能让「旧任务完全不改」，只在新任务上加结构？', x: 40, y: 32, w: 300 },
     { id: 'b-principle', type: 'principle', title: '核心原理：列式增长 + 侧向连接', text: '每个任务一列独立参数，永不改动；新列通过侧向连接读取旧列各层的激活，用可学习权重做特征复用。于是旧任务的前向路径完全冻结，遗忘在结构上不可能发生；代价是参数量随任务数线性增长。', figureId: 'f-1', x: 40, y: 330, w: 340 },
-    { id: 'b-formula-1', type: 'formula', title: '第 k 列的激活', latex: 'h_i^{(k)} = f(W_i^{(k)} h_{i-1}^{(k)} + Σ_{j<k} U_i^{(k,j)} h_{i-1}^{(j)})', section: '3.2 Method', text: 'W 是本列自己的权重，U 是来自旧列的侧向连接；求和项让新任务能借用旧特征。', x: 450, y: 32, w: 300 },
+    { id: 'b-formula-1', type: 'formula', title: '第 k 列的激活', latex: 'h_i^{(k)} = f(W_i^{(k)} h_{i-1}^{(k)} + Σ_{j<k} U_i^{(k,j)} h_{i-1}^{(j)})', section: '3.2 Method', where: '每一列的输入端（侧向连接）', figureRef: 'f-1', text: 'W 是本列自己的权重，U 是来自旧列的侧向连接；求和项让新任务能借用旧特征。', x: 450, y: 32, w: 300 },
     { id: 'b-result-1', type: 'result', title: '完全不遗忘，但参数线性增长', text: '在 Atari 与迷宫任务上，学完新任务后旧任务性能完全不变（因为参数冻结）；参数量与任务数成正比。', x: 860, y: 330, w: 300 },
   ],
   edges: [
@@ -369,6 +369,21 @@ if (!figCapTexts.some((text) => text.includes('§'))) errors.push('节点上的�
 if (!figCapTexts.some((text) => /Figure\s*\d/.test(text))) errors.push('图注标签里没有 Figure/Table 编号：' + figCapTexts.join(' | ').slice(0, 80));
 const metaTexts = await page.locator('.pd-node-meta').allInnerTexts();
 if (!metaTexts.some((text) => text.includes('§3.2 Method'))) errors.push('公式节点没有标所在章节：' + metaTexts.join(' | ').slice(0, 80));
+// 公式要说明"作用在原理图的哪一部分"，并能一键看图
+const whereTexts = await page.locator('.pd-node-where').allInnerTexts();
+if (!whereTexts.some((text) => text.includes('作用于') && /Figure\s*\d/.test(text))) {
+  errors.push('公式没有说明作用在原理图的哪一部分：' + whereTexts.join(' | ').slice(0, 80));
+}
+const whereLink = page.locator('.pd-where-link').first();
+if ((await whereLink.count()) === 0) errors.push('公式卡片缺少「看原理图」入口');
+else {
+  await whereLink.click();
+  await page.waitForSelector('.pd-lightbox', { timeout: 3000 }).catch(() => errors.push('点「看原理图」没有打开大图'));
+  const lightboxCap = await page.locator('.pd-lightbox-cap').innerText().catch(() => '');
+  if (!/Figure\s*\d/.test(lightboxCap)) errors.push('大图没有带上原理图的图注：' + lightboxCap.slice(0, 60));
+  await page.mouse.click(20, 20);
+  await page.waitForTimeout(200);
+}
 await shot('03-canvas');
 
 // 工具栏不再有「原始 PDF」「整篇问答」「重新裁图」三个按钮

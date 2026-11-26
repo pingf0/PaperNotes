@@ -253,6 +253,19 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   );
   check('流程图：公式挂在原理节点上', flow.edges.some((edge) => edge.from === principle.id && edge.to === formulaBlocks[0].id));
   check('流程图：公式带上所在章节', formulaBlocks[0].section === '3.2 Method', JSON.stringify(formulaBlocks.map((b) => b.section)));
+  const withWhere = buildBlocks(
+    {
+      title: 'formula where',
+      motivation: 'm',
+      principle: { summary: 'p', figureIndex: -1 },
+      formulas: [{ name: '打分', latex: 's=u^Tv', where: '右侧的融合模块', explain: '打分' }],
+      results: [{ title: '结果', text: 'r', figureIndex: -1 }],
+    },
+    [],
+    't',
+  );
+  const applied = withWhere.blocks.find((block) => block.type === 'formula');
+  check('公式：记录"作用于原理图的哪一部分"', applied.where === '右侧的融合模块', JSON.stringify(applied.where));
   check('流程图：原理右侧的问题列不被公式压到', formulaBlocks.every((block) => block.x + block.w <= 760), formulaBlocks.map((b) => b.x + b.w).join(','));
 }
 

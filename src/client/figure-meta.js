@@ -17,3 +17,14 @@ export function figureLabel(figure) {
   if (section) return `§${section}`;
   return figure.page ? `第 ${figure.page} 页` : '';
 }
+
+/**
+ * 只取编号：`Figure 2` / `Table 1`（不带 §板块）。图表标签用来拼句子时更顺。
+ * @param {{ caption?: string }|undefined} figure
+ * @returns {string}
+ */
+export function figureName(figure) {
+  const match = String(figure?.caption ?? '').match(/^(figure|fig\.?|table|图|表)\s*([0-9]{1,2}|[IVX]{1,4})/i);
+  if (!match) return '';
+  return `${/(table|表)/i.test(match[1]) ? 'Table' : 'Figure'} ${match[2]}`;
+}

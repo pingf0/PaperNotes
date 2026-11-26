@@ -6,7 +6,7 @@
  */
 import { React } from './runtime.js';
 import { api, assetUrl } from './api.js';
-import { figureLabel } from './figure-meta.js';
+import { figureLabel, figureName } from './figure-meta.js';
 import { Drawer } from './drawer.jsx';
 import { Formula, Icon, Lightbox, Markdown, Modal, Spinner } from './ui.jsx';
 
@@ -918,6 +918,34 @@ export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAut
             { className: 'pd-node-body' },
             block.section ? React.createElement('div', { className: 'pd-node-meta' }, `§${block.section}`) : null,
             block.latex ? React.createElement(Formula, { tex: block.latex, className: 'pd-node-latex' }) : null,
+            (() => {
+              if (!block.where) return null;
+              const refFigure = block.figureRef ? figures.find((item) => item.id === block.figureRef) : null;
+              const refLabel = refFigure ? figureName(refFigure) : '';
+              return React.createElement(
+                'div',
+                { className: 'pd-node-where' },
+                React.createElement('span', null, `↳ 作用于${refLabel ? ` ${refLabel} ` : '原理图'}的「${block.where}」`),
+                refFigure
+                  ? React.createElement(
+                      'button',
+                      {
+                        className: 'pd-where-link',
+                        onMouseDown: (event) => event.stopPropagation(),
+                        onClick: (event) => {
+                          event.stopPropagation();
+                          if (Date.now() - dragEndedAt.current < 250) return;
+                          setLightbox({
+                            src: assetUrl(paper.id, refFigure.file, assetVersion),
+                            caption: refFigure.caption || figureLabel(refFigure),
+                          });
+                        },
+                      },
+                      '看原理图',
+                    )
+                  : null,
+              );
+            })(),
             block.text
               ? React.createElement(
                   'div',
@@ -1115,6 +1143,7 @@ function NodeEditModal({ block, figures, paperId, assetVersion, onClose, onSave,
   const [text, setText] = useState(block.text ?? '');
   const [latex, setLatex] = useState(block.latex ?? '');
   const [figureId, setFigureId] = useState(block.figureId ?? '');
+  const [where, setWhere] = useState(block.where ?? '');
   const [uploading, setUploading] = useState(false);
   /** 只看"这块自己的图"；需要换图时才展开全部。 */
   const [showAll, setShowAll] = useState(!block.figureId);
@@ -1151,7 +1180,19 @@ function NodeEditModal({ block, figures, paperId, assetVersion, onClose, onSave,
         React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '取消'),
         React.createElement(
           'button',
-          { key: 's', className: 'pd-btn pd-btn-primary', onClick: () => onSave({ id: block.id, title, text, latex, figureId: figureId || undefined }) },
+          {
+            key: 's',
+            className: 'pd-btn pd-btn-primary',
+            onClick: () =>
+              onSave({
+                id: block.id,
+                title,
+                text,
+                latex,
+                where: where.trim() || undefined,
+                figureId: figureId || undefined,
+              }),
+          },
           '保存',
         ),
       ],
@@ -1174,6 +1215,19 @@ function NodeEditModal({ block, figures, paperId, assetVersion, onClose, onSave,
       React.createElement('span', { className: 'pd-field-label' }, 'LaTeX（可空）'),
       React.createElement('textarea', { className: 'pd-textarea', rows: 3, value: latex, onChange: (event) => setLatex(event.target.value) }),
     ),
+    block.type === 'formula'
+      ? React.createElement(
+          'div',
+          { className: 'pd-field' },
+          React.createElement('span', { className: 'pd-field-label' }, '作用在原理图的哪一部分（可空）'),
+          React.createElement('input', {
+            className: 'pd-input',
+            placeholder: '例：右侧的跨域融合模块',
+            value: where,
+            onChange: (event) => setWhere(event.target.value),
+          }),
+        )
+      : null,
     figures.length >= 0
       ? React.createElement(
           'div',
