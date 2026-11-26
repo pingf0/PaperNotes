@@ -676,9 +676,27 @@ bbox 是整页 612×792），所以"用 XObject bbox 精确框定图"这条路�
 明暗两套全流程 `errors: none`，`npm test` 47/47、7/7、9/9、6/6、11/11。
 截图更新：`docs/shots/settings-models.png`、`settings-dir.png`、`dir-picker.png`、`settings-models-dark.png`。
 
+## 0.13.6：黄金比例但收小；选文件夹走系统原生面板
+
+用户反馈两件事："改小设置框还是要遵循黄金比例"、"Windows 选文件夹要打开资源管理器，macOS 要打开访达"。
+
+- **尺寸回到黄金比例，但整体收小**：0.13.5 为了紧凑把高度改成了内容自适应（840×318），比例没了。
+  现在 `width: 760, ratio: 1.618` → **760×470**（0.13.4 是 900×556，面积小约 29%），正文滚动、按钮常驻。
+- **修掉"footer 不贴底"**：`.pd-modal-body` 之前没有 `flex: 1 1 auto`，固定高度的弹窗里正文不长个子，
+  按钮就停在内容下方、留一条空白在下面。补上后正文吃掉剩余空间，`关闭 / 保存` 真正钉在窗口右下角
+  （预览台加了"保存贴底边 ±24px"的断言，就是这条抓出来的）。
+- **系统文件夹选择器**：`POST /fs/pick-directory` 现在优先用宿主的 `ctx.directoryPicker` 服务
+  （Desktop 里挂的是 native 后端）—— **macOS 弹 AppKit 的 `NSOpenPanel`（访达风格的"打开文件夹"），
+  Windows 弹 `IFileOpenDialog`（资源管理器风格的文件夹选择器）**，Linux 走 Zenity / KDialog。
+  没有这个服务再退回 Electron 的 `showOpenDialog`，再没有才回 501 让前端用内置目录浏览器。
+
+验证：`tests/smoke.mjs` 新增 3 条（native 优先 / 取消回 canceled / browse 后端不冒充原生）→ 50/50；
+预览台把尺寸断言改回"宽高比与 1.618 差 < 0.05 且宽 ≤ 820"，加上右下角贴边断言，明暗两套 `errors: none`；
+`npm test` 50/50、7/7、9/9、6/6、11/11。
+
 ## 当前安装版本
 
-`dsh-paper-desk@0.13.5`（generation `…+0.13.5+deba50f8cf44`，2026-11-26 23:09 装入）。
+`dsh-paper-desk@0.13.6`（generation `…+0.13.6+a5a039437d0a`，2026-11-26 23:23 装入）。
 Plugin Manager 报 `restart-required`（package-moved）：**重启 DSH 桌面应用一次**，设置窗口的改动才会进内存。
 
 ### 0.1.0 在真实宿主上的实测（22:54）

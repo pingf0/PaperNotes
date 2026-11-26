@@ -485,8 +485,29 @@ export function createServer(ctx, prefix) {
       }
 
       if (path === '/fs/pick-directory' && method === 'POST') {
-        // 优先用系统原生的"选择文件夹"对话框（Electron 主进程里可用）；
-        // 拿不到就回 501，前端退回内置的目录浏览器。
+        // 三层兜底，越靠前越"像系统"：
+        //   1) 宿主的 ctx.directoryPicker（Desktop 里挂的是 native 后端）--
+        //      macOS 弹 AppKit 的 NSOpenPanel（访达风格的"打开文件夹"），
+        //      Windows 弹 IFileOpenDialog（资源管理器风格的文件夹选择器），Linux 走 Zenity/KDialog；
+        //   2) 旧宿主没有这个服务时，退回 Electron 主进程的 showOpenDialog；
+        //   3) 都没有就回 501，前端退回内置的目录浏览器（纯 Web 宿主）。
+        const native = ctx?.get?.('directoryPicker');
+        const capability = native?.capability?.();
+        if (capability?.kind === 'native' && typeof capability.pick === 'function') {
+          const controller = new AbortController();
+          const abort = () => controller.abort();
+          res.on('close', abort);
+          try {
+            const picked = await capability.pick(controller.signal);
+            return sendJson(res, 200, picked ? { path: picked } : { canceled: true });
+          } catch (error) {
+            return sendJson(res, 500, {
+              error: `系统文件夹选择器打不开：${error instanceof Error ? error.message : String(error)}`,
+            });
+          } finally {
+            res.off('close', abort);
+          }
+        }
         try {
           const require = createRequire(import.meta.url);
           const electron = require('electron');

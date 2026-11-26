@@ -247,6 +247,38 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('设置：测试连接缺参数时报错', bad.status === 400, JSON.stringify(bad.payload));
 }
 
+// 系统文件夹选择：宿主提供了 native 能力就直接用（macOS 访达面板 / Windows 资源管理器对话框），
+// 拿不到才退回 Electron、再退回内置目录浏览器
+{
+  const serveWith = async (pickerCtx) => {
+    const scopedHandler = createServer(pickerCtx, PREFIX);
+    const scoped = createHttpServer((req, res) => scopedHandler(req, res));
+    await new Promise((resolve) => scoped.listen(0, '127.0.0.1', resolve));
+    return {
+      base: `http://127.0.0.1:${scoped.address().port}${PREFIX}`,
+      close: () => new Promise((resolve) => scoped.close(resolve)),
+    };
+  };
+  const pickVia = async (picker) => {
+    const instance = await serveWith({
+      get: (name) => (name === 'directoryPicker' ? picker : undefined),
+      logger: { info() {}, warn: console.warn },
+    });
+    try {
+      const response = await fetch(`${instance.base}/fs/pick-directory`, { method: 'POST' });
+      return { status: response.status, payload: await response.json() };
+    } finally {
+      await instance.close();
+    }
+  };
+  const native = await pickVia({ capability: () => ({ kind: 'native', pick: async () => '/tmp/pd-picked' }) });
+  check('系统文件夹选择：优先走宿主的 native 选择器', native.status === 200 && native.payload.path === '/tmp/pd-picked', JSON.stringify(native.payload));
+  const canceled = await pickVia({ capability: () => ({ kind: 'native', pick: async () => null }) });
+  check('系统文件夹选择：用户取消时回 canceled', canceled.status === 200 && canceled.payload.canceled === true, JSON.stringify(canceled.payload));
+  const browse = await pickVia({ capability: () => ({ kind: 'browse', list: async () => ({ path: '/' }) }) });
+  check('系统文件夹选择：browse 后端不冒充原生对话框', browse.status === 501, String(browse.status));
+}
+
 // 重新分析：模型不可用时要回 502（前端会显示原因），而不是 500 或挂死
 {
   const res = await json('/paper/reanalyze', { method: 'POST', body: { id: doc.id } });

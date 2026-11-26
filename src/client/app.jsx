@@ -893,9 +893,9 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
     {
       title: '设置',
       onClose,
-      // 高度跟着页签内容走（不再锁成黄金比例的大框）；宽度比 0.13.4 收窄一点，最大不超过视口 72%
-      width: 840,
-      maxHeight: '72vh',
+      // 黄金比例但整体收小：760 × 470（0.13.4 是 900 × 556）
+      width: 760,
+      ratio: 1.618,
       footer: [
         React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '关闭'),
         React.createElement('button', { key: 's', className: 'pd-btn pd-btn-primary', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),

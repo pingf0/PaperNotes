@@ -755,10 +755,12 @@ await page.waitForTimeout(200);
 {
   await page.click('.pd-top button[title="设置数据目录"]');
   await page.waitForSelector('.pd-settings-body');
-  // 尺寸：宽度收窄到 840，高度跟着内容走（不再锁成 900×556 的大框），且不超过视口 72% + 一点余量
+  // 尺寸：比 0.13.4 的 900×556 小一圈，但仍然按黄金比例（宽 800 → 高约 494）
   const modalBox = await page.locator('.pd-modal').first().boundingBox();
-  if (modalBox.width > 880) errors.push(`设置弹窗太宽：${Math.round(modalBox.width)}px`);
-  if (modalBox.height > 900 * 0.74) errors.push(`设置弹窗太高：${Math.round(modalBox.height)}px（应跟着内容走）`);
+  const modalRatio = modalBox.width / modalBox.height;
+  if (modalBox.width > 820) errors.push(`设置弹窗太宽：${Math.round(modalBox.width)}px`);
+  if (Math.abs(modalRatio - 1.618) > 0.05)
+    errors.push(`设置弹窗不是黄金比例：${modalRatio.toFixed(3)}（${Math.round(modalBox.width)}×${Math.round(modalBox.height)}）`);
   const dirPaneBox = modalBox;
   // 关闭 / 保存 统一钉在窗口右下角：底边与右边都要贴着弹窗内边（容许 24px 内边距）
   const closeBox = await page.locator('.pd-modal-foot button', { hasText: '关闭' }).first().boundingBox();

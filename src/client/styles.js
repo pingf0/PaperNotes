@@ -458,7 +458,8 @@ export const CSS = `
   background: var(--dsw-alias-bg-base, #fff); border-radius: 12px; box-shadow: 0 20px 60px rgba(10,20,40,.3);
 }
 .pd-modal-head { padding: 12px 16px; font-weight: 600; border-bottom: 1px solid var(--dsw-alias-border-l1, #eee); flex: none; }
-.pd-modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; }
+/* 固定高度的弹窗里正文吃掉剩余空间，footer 才会真的贴在窗口右下角 */
+.pd-modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; flex: 1 1 auto; }
 .pd-modal-foot { padding: 10px 16px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--dsw-alias-border-l1, #eee); flex: none; }
 .pd-field { display: flex; flex-direction: column; gap: 4px; }
 .pd-field-label { font-size: 11px; color: var(--dsw-alias-label-tertiary, #999); }
