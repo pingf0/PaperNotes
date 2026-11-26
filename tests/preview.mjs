@@ -67,7 +67,7 @@ const paper1 = {
   blocks: [
     { id: 'b-motivation', type: 'motivation', title: '解决的问题与动机', text: '该式将跨域融合序列、混合域序列和用户或混合域表示加权组合。α、β、γ为可学习权重。\\mathbf{z}_u^{final}随后用于计算目标item的偏好得分。神经网络顺序学习多个任务时会灾难性遗忘：新任务一训练，旧任务的性能就塌掉。但很多场景（隐私、存储、算力）不允许保留旧数据做联合训练，所以需要一种“不回放旧数据”的持续学习办法。', x: 40, y: 32, w: 300 },
     { id: 'b-principle', type: 'principle', title: '核心原理：重要权重别乱动', text: '该式将跨域融合序列、混合域序列和用户或混合域表示加权组合。α、β、γ为可学习权重。\\mathbf{z}_u^{final}随后用于计算目标item的偏好得分。\n\n把“参数有多重要”量化为 Fisher 信息矩阵的对角元：对旧任务输出影响大的参数，惩罚系数就大。训练新任务时在损失里加一项 Σ F_i (θ_i - θ*_i)²，让重要参数留在旧值附近，不重要的参数自由迁移。多个任务依次到来时，各项惩罚累加，等价于在高斯近似下做贝叶斯后验更新。', figureId: 'f-1', x: 40, y: 330, w: 340 },
-    { id: 'b-formula-1', type: 'formula', title: 'EWC 损失', latex: 'L(θ) = L_B(θ) + Σ_i (λ/2) F_i (θ_i - θ*_{A,i})²', text: '第一项是新任务的损失，第二项是约束项；λ 控制“记住旧任务”和“学好新任务”的权衡。', x: 450, y: 32, w: 300 },
+    { id: 'b-formula-1', type: 'formula', title: 'EWC 损失', latex: 'L(θ) = L_B(θ) + Σ_i (λ/2) F_i (θ_i - θ*_{A,i})²', section: '3.2 Method', text: '第一项是新任务的损失，第二项是约束项；λ 控制“记住旧任务”和“学好新任务”的权衡。', x: 450, y: 32, w: 300 },
     { id: 'b-formula-2', type: 'formula', title: 'Fisher 信息', latex: 'F_i = E[(∂/∂θ_i log p(y|x,θ))²]', text: 'Fisher 信息衡量第 i 个参数对似然的敏感度，这里用训练集上的经验值近似，只取对角（省算力）。', x: 450, y: 312, w: 300 },
     { id: 'b-result-1', type: 'result', title: '在 permuted MNIST 上几乎不遗忘', text: '三个随机置换任务依次训练后，EWC 在每个任务上的准确率都保持在 90% 以上，而普通 SGD 会掉到随机水平。', figureId: 'f-2', x: 860, y: 330, w: 300 },
   ],
@@ -79,8 +79,8 @@ const paper1 = {
     { from: 'b-principle', to: 'b-result-1' },
   ],
   figures: [
-    { id: 'f-1', file: await figure('p-ewc', 1, 'fig-1.png'), caption: 'Figure 1: elastic weight consolidation (EWC) ensures task A is remembered whilst training on task B', page: 3 },
-    { id: 'f-2', file: await figure('p-ewc', 2, 'fig-2.png'), caption: 'Figure 2: Results on the permuted MNIST task.', page: 4 },
+    { id: 'f-1', file: await figure('p-ewc', 1, 'fig-1.png'), caption: 'Figure 1: elastic weight consolidation (EWC) ensures task A is remembered whilst training on task B', page: 3, section: '3.2 Method' },
+    { id: 'f-2', file: await figure('p-ewc', 2, 'fig-2.png'), caption: 'Figure 2: Results on the permuted MNIST task.', page: 4, section: '4.5 Results' },
   ],
   notes: [
     { id: 'n-1', kind: 'user', blockId: null, text: 'FWT / BWT 这两个持续学习指标我一直没分清：FWT 看的是「学新任务对旧任务的影响」，BWT 看的是「学了新任务之后回头测旧任务的变化」。这篇论文只报了 ACC，没报 BWT。', createdAt: Date.now() - 86_400_000 * 20 },
@@ -119,7 +119,7 @@ const paper2 = {
   blocks: [
     { id: 'b-motivation', type: 'motivation', title: '解决的问题与动机', text: '该式将跨域融合序列、混合域序列和用户或混合域表示加权组合。α、β、γ为可学习权重。\\mathbf{z}_u^{final}随后用于计算目标item的偏好得分。参数共享式的持续学习要么遗忘、要么容量受限。能不能让「旧任务完全不改」，只在新任务上加结构？', x: 40, y: 32, w: 300 },
     { id: 'b-principle', type: 'principle', title: '核心原理：列式增长 + 侧向连接', text: '每个任务一列独立参数，永不改动；新列通过侧向连接读取旧列各层的激活，用可学习权重做特征复用。于是旧任务的前向路径完全冻结，遗忘在结构上不可能发生；代价是参数量随任务数线性增长。', figureId: 'f-1', x: 40, y: 330, w: 340 },
-    { id: 'b-formula-1', type: 'formula', title: '第 k 列的激活', latex: 'h_i^{(k)} = f(W_i^{(k)} h_{i-1}^{(k)} + Σ_{j<k} U_i^{(k,j)} h_{i-1}^{(j)})', text: 'W 是本列自己的权重，U 是来自旧列的侧向连接；求和项让新任务能借用旧特征。', x: 450, y: 32, w: 300 },
+    { id: 'b-formula-1', type: 'formula', title: '第 k 列的激活', latex: 'h_i^{(k)} = f(W_i^{(k)} h_{i-1}^{(k)} + Σ_{j<k} U_i^{(k,j)} h_{i-1}^{(j)})', section: '3.2 Method', text: 'W 是本列自己的权重，U 是来自旧列的侧向连接；求和项让新任务能借用旧特征。', x: 450, y: 32, w: 300 },
     { id: 'b-result-1', type: 'result', title: '完全不遗忘，但参数线性增长', text: '在 Atari 与迷宫任务上，学完新任务后旧任务性能完全不变（因为参数冻结）；参数量与任务数成正比。', x: 860, y: 330, w: 300 },
   ],
   edges: [
@@ -127,7 +127,7 @@ const paper2 = {
     { from: 'b-principle', to: 'b-formula-1' },
     { from: 'b-principle', to: 'b-result-1' },
   ],
-  figures: [{ id: 'f-1', file: await figure('p-pnn', 1, 'fig-3.png'), caption: 'Figure 3: Results on Atari task.', page: 6 }],
+  figures: [{ id: 'f-1', file: await figure('p-pnn', 1, 'fig-3.png'), caption: 'Figure 3: Results on Atari task.', page: 6, section: '4.2 Atari' }],
   notes: [{ id: 'n-3', kind: 'user', blockId: null, text: '和 EWC 的根本差别：EWC 改的是损失，PNN 改的是结构。', createdAt: Date.now() - 86_400_000 * 2 }],
   chats: [
     {
@@ -363,13 +363,18 @@ const rawLatexLeaked = await page.locator('.pd-node .pd-node-latex').first().inn
 if (/\\mathbf|\\alpha/.test(rawLatexLeaked)) errors.push('公式节点仍在显示 LaTeX 源码：' + rawLatexLeaked.slice(0, 60));
 const fontLoaded = await page.evaluate(() => document.fonts.check('16px KaTeX_Main'));
 if (!fontLoaded) errors.push('KaTeX 字体没加载（公式会用系统衬线兜底，间距会乱）');
+// 图必须标出"它在论文哪一节"，公式节点同理
+const figCapTexts = await page.locator('.pd-fig-cap').allInnerTexts();
+if (!figCapTexts.some((text) => text.includes('§'))) errors.push('节点上的图没有标板块：' + figCapTexts.join(' | ').slice(0, 80));
+if (!figCapTexts.some((text) => /Figure\s*\d/.test(text))) errors.push('图注标签里没有 Figure/Table 编号：' + figCapTexts.join(' | ').slice(0, 80));
+const metaTexts = await page.locator('.pd-node-meta').allInnerTexts();
+if (!metaTexts.some((text) => text.includes('§3.2 Method'))) errors.push('公式节点没有标所在章节：' + metaTexts.join(' | ').slice(0, 80));
 await shot('03-canvas');
 
-// 刚打开、还没选中任何节点时：「整篇问答」应为禁用态；工具栏不再有「原始 PDF」按钮
+// 工具栏不再有「原始 PDF」「整篇问答」「重新裁图」三个按钮
 if ((await page.getByRole('button', { name: '原始 PDF' }).count()) !== 0) errors.push('「原始 PDF」按钮应该已经删除');
-if (!(await page.getByRole('button', { name: '整篇问答' }).isDisabled())) {
-  errors.push('没选中节点时「整篇问答」应该是禁用态');
-}
+if ((await page.getByRole('button', { name: '整篇问答' }).count()) !== 0) errors.push('「整篇问答」按钮应该已经删除');
+if ((await page.getByRole('button', { name: /重新裁图/ }).count()) !== 0) errors.push('「重新裁图」按钮应该已经删除');
 
 // 拖拽：先验标题栏（稳定路径），再验"按正文也能拖"（软断言）
 const nodeBox = await page.locator('.pd-node').first().boundingBox();
@@ -391,36 +396,66 @@ if (!(Math.abs(posAfter.x - posBefore.x) > 50)) errors.push(`拖标题栏没能�
 await shot('04-drag-from-body');
 
 // 节点尺寸：拖右下角把手改宽高，双击恢复
-const sizeOf = async () => {
-  const style = await page.locator('.pd-node').first().getAttribute('style');
+// 说明：整理布局后卡片可能挨得很近，别的节点的把手会盖在这一格的角上；
+// 所以先挑一个"把手真的点得到"的节点（elementFromPoint 命中自己），再拖它。
+const nodeAt = (index) => page.locator('.pd-node').nth(index);
+const sizeOfIndex = async (index) => {
+  const style = await nodeAt(index).getAttribute('style');
   return {
     w: Number((/width: ([0-9.]+)px/.exec(style ?? '') ?? [])[1] ?? 0),
     h: (/height: ([0-9.]+)px/.exec(style ?? '') ?? [])[1] ?? null,
   };
 };
-const sizeBefore = await sizeOf();
-const corner = await page.locator('.pd-node .pd-rs-se').first().boundingBox();
-await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
-await page.mouse.down();
-await page.mouse.move(corner.x + 120, corner.y + 80, { steps: 10 });
-await page.mouse.up();
+const posOfIndex = async (index) => {
+  const style = await nodeAt(index).getAttribute('style');
+  const left = /left: (-?[0-9.]+)px/.exec(style ?? '');
+  const top = /top: (-?[0-9.]+)px/.exec(style ?? '');
+  return { x: left ? Number(left[1]) : null, y: top ? Number(top[1]) : null };
+};
+await page.getByRole('button', { name: '适应' }).click();
 await page.waitForTimeout(250);
-const sizeAfter = await sizeOf();
-if (!(sizeAfter.w > sizeBefore.w + 40)) errors.push(`拖右下角没有变宽：${sizeBefore.w} → ${sizeAfter.w}`);
-if (!(sizeAfter.h && Number(sizeAfter.h) > 0)) errors.push('拖右下角没有设置高度');
-// 左上角：向左上拖，宽高增大且节点位置跟着左上移动
-const nwBox = await page.locator('.pd-node .pd-rs-nw').first().boundingBox();
-const posBeforeNw = await readNodePos();
-const sizeBeforeNw = await sizeOf();
-await page.mouse.move(nwBox.x + nwBox.width / 2, nwBox.y + nwBox.height / 2);
-await page.mouse.down();
-await page.mouse.move(nwBox.x - 60, nwBox.y - 40, { steps: 10 });
-await page.mouse.up();
-await page.waitForTimeout(250);
-const posAfterNw = await readNodePos();
-const sizeAfterNw = await sizeOf();
-if (!(sizeAfterNw.w > sizeBeforeNw.w + 30)) errors.push(`拖左上角没有变宽：${sizeBeforeNw.w} → ${sizeAfterNw.w}`);
-if (!(posAfterNw.x < posBeforeNw.x - 20)) errors.push(`拖左上角时位置没跟着动：${posBeforeNw.x} → ${posAfterNw.x}`);
+const resizeProbe = await page.evaluate(() => {
+  const nodes = [...document.querySelectorAll('.pd-node')];
+  for (let index = 0; index < nodes.length; index += 1) {
+    const handle = nodes[index].querySelector('.pd-rs-se');
+    if (!handle) continue;
+    const rect = handle.getBoundingClientRect();
+    const x = rect.x + rect.width / 2;
+    const y = rect.y + rect.height / 2;
+    if (x < 4 || y < 4 || x > window.innerWidth - 4 || y > window.innerHeight - 4) continue;
+    if (document.elementFromPoint(x, y) !== handle) continue;
+    return { index, x, y };
+  }
+  return null;
+});
+let resizeTarget = null;
+if (!resizeProbe) {
+  errors.push('所有节点的右下角把手都被别的节点盖住了，没法拖尺寸');
+} else {
+  resizeTarget = resizeProbe.index;
+  const sizeBefore = await sizeOfIndex(resizeTarget);
+  await page.mouse.move(resizeProbe.x, resizeProbe.y);
+  await page.mouse.down();
+  await page.mouse.move(resizeProbe.x + 120, resizeProbe.y + 80, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const sizeAfter = await sizeOfIndex(resizeTarget);
+  if (!(sizeAfter.w > sizeBefore.w + 40)) errors.push(`拖右下角没有变宽：${sizeBefore.w} → ${sizeAfter.w}`);
+  if (!(sizeAfter.h && Number(sizeAfter.h) > 0)) errors.push('拖右下角没有设置高度');
+  // 左上角：向左上拖，宽高增大且节点位置跟着左上移动
+  const nwBox = await nodeAt(resizeTarget).locator('.pd-rs-nw').boundingBox();
+  const posBeforeNw = await posOfIndex(resizeTarget);
+  const sizeBeforeNw = await sizeOfIndex(resizeTarget);
+  await page.mouse.move(nwBox.x + nwBox.width / 2, nwBox.y + nwBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(nwBox.x - 60, nwBox.y - 40, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const posAfterNw = await posOfIndex(resizeTarget);
+  const sizeAfterNw = await sizeOfIndex(resizeTarget);
+  if (!(sizeAfterNw.w > sizeBeforeNw.w + 30)) errors.push(`拖左上角没有变宽：${sizeBeforeNw.w} → ${sizeAfterNw.w}`);
+  if (!(posAfterNw.x < posBeforeNw.x - 20)) errors.push(`拖左上角时位置没跟着动：${posBeforeNw.x} → ${posAfterNw.x}`);
+}
 // 整理布局：按连线重排后，节点不再像刺猬一样围着一个点
 const beforeTidy = await page.evaluate(() =>
   [...document.querySelectorAll('.pd-node')].map((node) => {
@@ -466,11 +501,15 @@ const undone = await page.evaluate(() =>
 if (JSON.stringify(undone) !== JSON.stringify(beforeTidy)) errors.push('撤销没有恢复原布局');
 await shot('04e-node-resized');
 // 双击右下角恢复默认尺寸，避免后续步骤被放大的节点挡住
-const corner2 = await page.locator('.pd-node .pd-rs-se').first().boundingBox();
-await page.mouse.dblclick(corner2.x + corner2.width / 2, corner2.y + corner2.height / 2);
-await page.waitForTimeout(250);
-const reset = await sizeOf();
-if (reset.h !== null) errors.push('双击右下角没有恢复自适应高度');
+if (resizeTarget !== null) {
+  await page.getByRole('button', { name: '适应' }).click();
+  await page.waitForTimeout(250);
+  const corner2 = await nodeAt(resizeTarget).locator('.pd-rs-se').boundingBox();
+  await page.mouse.dblclick(corner2.x + corner2.width / 2, corner2.y + corner2.height / 2);
+  await page.waitForTimeout(250);
+  const reset = await sizeOfIndex(resizeTarget);
+  if (reset.h !== null) errors.push('双击右下角没有恢复自适应高度');
+}
 // 拖完之后再点一下，仍然能正常选中（说明被拖拽吞掉的 click 没有把后续点击也吃掉）
 const movedBox = await page.locator('.pd-node').first().boundingBox();
 await page.mouse.click(movedBox.x + 60, movedBox.y + 40);
@@ -478,11 +517,10 @@ await page.waitForTimeout(250);
 const scopeText = await page.locator('.pd-scope').first().innerText();
 if (!scopeText.includes('当前板块')) errors.push('拖拽后点击节点没能选中：' + scopeText);
 
-// 工具栏两个按钮：原始 PDF（新窗口打开原文）与 整篇问答（右侧栏切回整篇）
-const wholeBtn = page.getByRole('button', { name: '整篇问答' });
-if ((await wholeBtn.count()) === 0) errors.push('缺少「整篇问答」按钮');
+// 这两个工具栏按钮已经按用户要求删掉：「重新裁图」「整篇问答」
+if ((await page.getByRole('button', { name: '整篇问答' }).count()) !== 0) errors.push('「整篇问答」按钮还在');
+if ((await page.getByRole('button', { name: /重新裁图/ }).count()) !== 0) errors.push('「重新裁图」按钮还在');
 await page.click('.pd-node .pd-node-head');
-if (await wholeBtn.isDisabled()) errors.push('选中节点后「整篇问答」应该可用');
 const scopeAfterSelect = await page.locator('.pd-scope').first().innerText();
 if (!scopeAfterSelect.includes('当前板块')) errors.push('选中节点后右侧栏范围没切到板块：' + scopeAfterSelect);
 await shot('04-node-chat');
@@ -493,7 +531,7 @@ if ((await page.getByRole('button', { name: '清空' }).count()) === 0) errors.p
 if ((await page.getByRole('button', { name: '发送' }).count()) === 0) errors.push('输入框缺少发送按钮');
 const composeHeight = await page.locator('.pd-compose').evaluate((el) => el.getBoundingClientRect().height);
 if (!(composeHeight > 80)) errors.push(`输入框太矮：${composeHeight}px`);
-if (!samplePdfPath) console.log('SKIP 原文/框选/重新裁图（未提供 PN_SAMPLE_PDF）');
+if (!samplePdfPath) console.log('SKIP 原文/框选（未提供 PN_SAMPLE_PDF）');
 await page.click('.pd-tab:nth-child(4)');
 await page.waitForSelector('.pd-pdf-scroll', { timeout: 15000 }).catch(() => errors.push('「原文」页签没有打开 PDF'));
 await page.waitForTimeout(1800);
@@ -604,11 +642,13 @@ await shot('04a3-picked-figure');
 // 回到会话页签，后续步骤继续用会话来验
 await page.click('.pd-tab:nth-child(1)');
 
-if (await wholeBtn.isDisabled()) await page.click('.pd-node .pd-node-head');
-await wholeBtn.click();
+// 回到整篇：点画布空白处（「整篇问答」按钮已删，这是现在唯一的入口之一）
+await page.locator('.pd-canvas').evaluate((el) => {
+  el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 4, clientY: 4 }));
+});
 await page.waitForTimeout(200);
 const scopeAfterWhole = await page.locator('.pd-scope').first().innerText();
-if (!scopeAfterWhole.includes('整篇论文')) errors.push('点「整篇问答」后范围没切回整篇：' + scopeAfterWhole);
+if (!scopeAfterWhole.includes('整篇论文')) errors.push('点画布空白处后范围没切回整篇：' + scopeAfterWhole);
 
 // 节点编辑：从图库里挂一张图，保存后节点上应该真的出现图片
 await page.click('.pd-node .pd-node-head button[title="编辑节点"]');
@@ -673,7 +713,9 @@ if (!(focused > fitted)) errors.push(`聚焦所选没有放大：${fitted} → $
 await shot('05-zoom-focus');
 
 // 消息上的「复制」：点一下要变成「已复制」（剪贴板写入需要权限，这里验状态机）
-await page.getByRole('button', { name: '整篇问答' }).click();
+await page.locator('.pd-canvas').evaluate((el) => {
+  el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 4, clientY: 4 }));
+});
 await page.waitForTimeout(200);
 await page.click('.pd-tab:nth-child(1)');
 const copyBtn = page.locator('.pd-msg-copy').first();
@@ -1079,24 +1121,6 @@ await page.mouse.up();
 await page.waitForTimeout(200);
 if (!(await page.locator('.pd-card-detail').first().isVisible())) errors.push('拖动卡片后详情被收起了');
 
-if (themeTag === 'light') {
-  // 重新裁图放到最后：它会换掉这篇论文的图，不能影响前面的断言
-  await page.getByRole('button', { name: '返回论文库' }).click();
-  await page.waitForSelector('.pd-paper');
-  await page.locator('.pd-paper').first().click();
-  await page.waitForSelector('.pd-node');
-  await page.getByRole('button', { name: /重新裁图/ }).click();
-  await page
-    .waitForFunction(
-      () => /已重新裁出|没有裁出|失败/.test(document.querySelector('.pd-notice')?.innerText ?? ''),
-      undefined,
-      { timeout: 180000 },
-    )
-    .catch(() => errors.push('重新裁图没有给出结果提示'));
-  const note = await page.locator('.pd-notice').first().innerText().catch(() => '');
-  if (!/已重新裁出|失败|没有裁出/.test(note)) errors.push('重新裁图的结果提示不对：' + note.slice(0, 60));
-  await shot('11-recrop-done');
-}
 };
 
 // 先验"旧一代宿主"提示：/health 不返回 assets 时，论文库顶部应该出现可执行的横幅

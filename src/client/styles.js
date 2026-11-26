@@ -180,6 +180,25 @@ export const CSS = `
 .pd-md-host .pd-md-h { font-size: 12.5px; margin: 6px 0 3px; }
 .pd-md-host .pd-md-ul { margin: 0 0 5px; padding-left: 16px; }
 .pd-node-figure { width: 100%; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l1, #eee); display: block; cursor: zoom-in; }
+/* 图下面那行"这张图在论文哪一节"：Figure 2 · §4.5 Results */
+.pd-node-figure-box { display: flex; flex-direction: column; min-width: 0; }
+.pd-fig-cap {
+  margin-top: 5px; font-size: 10.5px; line-height: 1.5; letter-spacing: .01em;
+  color: var(--dsw-alias-label-tertiary, #9a9a9a);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pd-node-meta { font-size: 10.5px; color: var(--dsw-alias-label-tertiary, #9a9a9a); margin-bottom: 4px; }
+/* 图库：缩略图网格（之前没有样式，图片会按原始尺寸把弹窗撑爆） */
+.pd-figure-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+.pd-figure-option {
+  display: flex; flex-direction: column; gap: 4px; padding: 6px; min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2, #dcdcdc); border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2, #fff); color: var(--dsw-alias-label-secondary, #666);
+  font: inherit; font-size: 11px; cursor: pointer; text-align: center;
+}
+.pd-figure-option img { width: 100%; height: 62px; object-fit: contain; border-radius: 4px; background: #fff; display: block; }
+.pd-figure-option.is-picked { border-color: #2f6fd0; box-shadow: 0 0 0 2px rgba(47, 111, 208, .22); }
+.pd-fig-option-cap { font-size: 10px; color: var(--dsw-alias-label-tertiary, #9a9a9a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-formula { margin-bottom: 6px; overflow-x: auto; overflow-y: hidden; }
 .pd-formula .katex { font-size: 1.08em; }
 .pd-formula .katex-display { margin: .2em 0; }
@@ -502,5 +521,7 @@ export const CSS = `
 }
 
 .pd-lightbox { position: fixed; inset: 0; z-index: 95; background: rgba(8,14,24,.82); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
-.pd-lightbox img { max-width: 92vw; max-height: 90vh; border-radius: 8px; background: #fff; }
+.pd-lightbox img { max-width: 92vw; max-height: 86vh; border-radius: 8px; background: #fff; }
+.pd-lightbox-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.pd-lightbox-cap { font-size: 12px; color: #dbe4f0; letter-spacing: .02em; }
 `;

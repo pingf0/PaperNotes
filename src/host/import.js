@@ -48,7 +48,13 @@ function digestText(pages) {
 /** 图注清单（给模型做编号映射用）。 */
 function captionList(figures) {
   if (figures.length === 0) return '（没有识别到图注）';
-  return figures.map((figure, index) => `[${index}] ${String(figure.caption ?? '').trim()}`).join('\n');
+  return figures
+    .map((figure, index) => {
+      const section = String(figure.section ?? '').trim();
+      const where = section ? `（§${section}）` : '';
+      return `[${index}] ${where}${String(figure.caption ?? '').trim()}`;
+    })
+    .join('\n');
 }
 
 /** 结构化提示词。 */
@@ -66,7 +72,7 @@ function buildPrompt(payload, digest, captions) {
     '  "abstract": "摘要级的一句话概括（中文，60 字以内）",',
     '  "motivation": "它要解决的问题、为什么这个问题重要、之前方法卡在哪（中文，3-6 句）",',
     '  "principle": { "summary": "核心原理/方法怎么做，拆成可读的步骤说明（中文，5-10 句）", "figureIndex": 核心原理图在下面图注清单里的编号，没有就 -1 },',
-    '  "formulas": [ { "name": "公式名", "latex": "LaTeX 源码", "explain": "这个公式在算什么、各符号含义（中文，2-4 句）" } ],',
+    '  "formulas": [ { "name": "公式名", "latex": "LaTeX 源码", "section": "这条公式在论文哪一节，如 3.2 Method；拿不准写空字符串", "explain": "这个公式在算什么、各符号含义（中文，2-4 句）" } ],',
     '  "results": [ { "title": "结果/结论的短标题", "text": "这个结果说明了什么（中文，2-4 句）", "figureIndex": 对应结果图编号，没有就 -1 } ],',
     '  "steps": [ { "title": "步骤名（如 样品制备/前处理/表征）", "text": "这一步具体怎么做：试剂、比例、温度、时间、仪器参数（中文，2-6 句）" } ],',
     '  "phenomena": [ { "title": "现象/观测的短标题", "text": "观察到了什么、说明了什么（中文，2-4 句）", "figureIndex": 对应图/表编号，没有就 -1 } ],',
@@ -296,6 +302,30 @@ export function buildBlocks(draft, figures, fallbackTitle) {
       rowY += expFigure || qFigure ? 420 : 300;
     });
 
+    // 核心公式：0.13.x 之前这段被问题链的 return 跳过，导致"最新的思路流没有公式"。
+    // 排法：跟「核心原理」同一列、接在它下面往下叠 —— 纵向连线（edgePath 的竖排分支），
+    // 横向给右侧的问题链留出干净的一列，不会出现斜线穿过卡片。
+    const questionFormulas = (Array.isArray(draft.formulas) ? draft.formulas : []).slice(0, 4);
+    const principleHeight = principleFigure ? 420 : 300;
+    const formulaTop = 330 + principleHeight + 26;
+    questionFormulas.forEach((formula, index) => {
+      const latex = String(formula?.latex ?? '').trim();
+      if (latex.length === 0) return;
+      const id = `b-formula-${index + 1}`;
+      push({
+        id,
+        type: 'formula',
+        title: String(formula?.name ?? `关键公式 ${index + 1}`).trim() || `关键公式 ${index + 1}`,
+        latex,
+        section: String(formula?.section ?? '').trim(),
+        text: String(formula?.explain ?? '').trim(),
+        x: COL_TEXT + 380,
+        y: formulaTop + index * 250,
+        w: 320,
+      });
+      edges.push({ from: principleId, to: id });
+    });
+
     return {
       title: String(draft.title ?? '').trim() || fallbackTitle,
       abstract: String(draft.abstract ?? '').trim(),
@@ -312,6 +342,7 @@ export function buildBlocks(draft, figures, fallbackTitle) {
       type: 'formula',
       title: String(formula?.name ?? `关键公式 ${index + 1}`).trim() || `关键公式 ${index + 1}`,
       latex: String(formula?.latex ?? '').trim(),
+      section: String(formula?.section ?? '').trim(),
       text: String(formula?.explain ?? '').trim(),
       x: COL_FORMULA,
       y: 32 + index * 280,

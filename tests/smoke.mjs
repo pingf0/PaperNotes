@@ -215,6 +215,36 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('流程图：两个问题的结论各自独立', byType('conclusion').length === 2);
 }
 
+// 问题链模式也要把核心公式建出来（之前被 return 跳过，用户反馈"最新的思路流没有公式"）
+{
+  const { buildBlocks } = await import('../src/host/import.js');
+  const flow = buildBlocks(
+    {
+      title: 'flow with formulas',
+      motivation: '为什么要做',
+      principle: { summary: '总原理', figureIndex: -1 },
+      formulas: [
+        { name: '目标函数', latex: 'L = -\\sum \\log \\sigma(x)', section: '3.2 Method', explain: '训练目标' },
+        { name: '打分', latex: 's = u^T v', section: '', explain: '内积打分' },
+      ],
+      questions: [{ question: '问题一', principle: '方法一', experiments: [{ name: '实验一', text: '结果一' }], conclusion: '结论一' }],
+    },
+    [],
+    't',
+  );
+  const formulaBlocks = flow.blocks.filter((block) => block.type === 'formula');
+  const principle = flow.blocks.find((block) => block.type === 'principle');
+  check('流程图：公式节点没有被问题链吞掉', formulaBlocks.length === 2, formulaBlocks.map((b) => b.title).join(','));
+  check(
+    '流程图：公式排在原理正下方（同一列、y 更大）',
+    formulaBlocks.every((block) => block.x === principle.x && block.y > principle.y),
+    `principle ${principle.x},${principle.y} → ` + formulaBlocks.map((b) => `${b.x},${b.y}`).join(' '),
+  );
+  check('流程图：公式挂在原理节点上', flow.edges.some((edge) => edge.from === principle.id && edge.to === formulaBlocks[0].id));
+  check('流程图：公式带上所在章节', formulaBlocks[0].section === '3.2 Method', JSON.stringify(formulaBlocks.map((b) => b.section)));
+  check('流程图：原理右侧的问题列不被公式压到', formulaBlocks.every((block) => block.x + block.w <= 760), formulaBlocks.map((b) => b.x + b.w).join(','));
+}
+
 // 插件设置：模型列表、打码、默认模型、目录浏览
 {
   const before = await json('/settings');

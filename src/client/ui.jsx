@@ -278,7 +278,7 @@ export function Markdown({ text }) {
  * 图片放大层。
  * @param {{ src: string, onClose: () => void }} props
  */
-export function Lightbox({ src, onClose }) {
+export function Lightbox({ src, caption, onClose }) {
   const { useEffect } = React;
   useEffect(() => {
     const onKey = (event) => {
@@ -290,6 +290,11 @@ export function Lightbox({ src, onClose }) {
   return React.createElement(
     'div',
     { className: 'pd-lightbox', onClick: onClose },
-    React.createElement('img', { src, alt: '放大查看' }),
+    React.createElement(
+      'div',
+      { className: 'pd-lightbox-inner' },
+      React.createElement('img', { src, alt: caption || '放大查看' }),
+      caption ? React.createElement('div', { className: 'pd-lightbox-cap' }, caption) : null,
+    ),
   );
 }

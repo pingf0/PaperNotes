@@ -28,7 +28,9 @@
 - 宿主再让模型整理成节点：
   - **计算机 / 算法类** → 问题动机 · 核心原理（+原理图）· 关键公式 · 结果（+结果图）
   - **化学 / 生物 / 材料 / 医学类** → 问题动机 · 实验原理 · **操作步骤** · **现象** · **结论**（保留试剂、温度、时间等原文数值）
-- 裁得不对有三条兜底：**重新裁图**（整篇重跑，图片带版本号不会撞缓存）、**上传图片**（本地文件）、**框选配图**（在原文上拖一个矩形，按 PDF 坐标以 3x 重渲染）。
+- 裁得不对有两条兜底：**上传图片**（本地文件）、**框选配图**（在原文上拖一个矩形，按 PDF 坐标以 3x 重渲染）。
+- 每张图都标出**它在论文哪一节**：图注里解析出 `Figure 2`，章节从正文标题里按页推出，节点上显示成 `Figure 2 · §4.5 Results`；
+  核心公式同理，卡片上带 `§3.2 Method`。图库和大图里也是同一套标签。
 
 | 论文库 | 画布 |
 |---|---|
@@ -158,7 +160,7 @@ src/host/llm.js          ctx.llm 薄封装（含 reasoning 与 finish 原因）
 src/host/server.js       全部 HTTP 路由
 src/client/index.jsx     模块加载器入口（main + sidebar.panellist）
 src/client/app.jsx       论文库
-src/client/canvas.jsx    画布（拖拽 / 缩放 / 连线 / 改尺寸 / 重新裁图）
+src/client/canvas.jsx    画布（拖拽 / 缩放 / 连线 / 改尺寸 / 图注板块）
 src/client/drawer.jsx    右侧栏（会话 / 笔记 / core / 原文）
 src/client/compare.jsx   对比台
 src/client/pdf.js        pdf.js 抽文与裁图算法
@@ -188,7 +190,7 @@ pnpm test:ui          # Playwright 全流程（需 playwright + chromium，缺�
 | `PN_PLAYWRIGHT` | playwright 入口（默认从 node_modules resolve） |
 | `PN_CHROMIUM` | Chromium 可执行文件（默认让 playwright 自己找） |
 | `PN_THEME_DIR` | DSH 的 ui-theme 样式目录（预览台用它还原真实主题变量） |
-| `PN_SAMPLE_PDF` | 一份真实 PDF，用于验「原文 / 框选配图 / 重新裁图」三步 |
+| `PN_SAMPLE_PDF` | 一份真实 PDF，用于验「原文 / 框选配图」两步 |
 
 ## 已知限制
 

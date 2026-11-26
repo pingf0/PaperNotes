@@ -5,8 +5,8 @@
  * 所以拖节点只需改 x/y，平移只改 layout.panX/panY——两者互不干扰，也方便直接存盘。
  */
 import { React } from './runtime.js';
-import { api, assetUrl, pdfUrl } from './api.js';
-import { extractPaper } from './pdf.js';
+import { api, assetUrl } from './api.js';
+import { figureLabel } from './figure-meta.js';
 import { Drawer } from './drawer.jsx';
 import { Formula, Icon, Lightbox, Markdown, Modal, Spinner } from './ui.jsx';
 
@@ -258,61 +258,30 @@ export function PaperView({ paperId, onClose, onChanged }) {
       return;
     }
     setReanalyzing(true);
-    setRecropNote(null);
+    setNotice(null);
     try {
       const result = await api.reanalyze(paperId);
       const fresh = await api.getPaper(paperId);
       paperRef.current = fresh.paper;
       setPaper(fresh.paper);
       setSelectedBlock(null);
-      setRecropNote({
+      setNotice({
         ok: true,
         text: `已重新分析：${result.blocks} 个节点，迁移 ${result.movedNotes ?? 0} 条笔记、${result.movedChats ?? 0} 段会话`,
       });
     } catch (e) {
-      setRecropNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      setNotice({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setReanalyzing(false);
     }
   };
 
-  /** 重新裁图：读已存的 source.pdf，用当前算法重跑一遍，只替换图片。 */
-  const [recropping, setRecropping] = useState(null);
-  /** 换图后 +1，让 <img> 的 URL 变化（否则浏览器会复用旧的位图，看起来"重新裁图没效果"）。 */
+  /** 换图/重分析后 +1，让 <img> 的 URL 变化（否则浏览器会复用旧的位图）。 */
   const [assetVersion, setAssetVersion] = useState(0);
-  /** 重新裁图的结果提示（成功/失败都显示在工具栏下面）。 */
-  const [recropNote, setRecropNote] = useState(null);
+  /** 工具栏下方的一次性提示（重新分析成功/失败都走它）。 */
+  const [notice, setNotice] = useState(null);
   /** 重排布局后给一次撤销机会。 */
   const [layoutUndo, setLayoutUndo] = useState(null);
-  const recrop = async () => {
-    if (recropping) return;
-    if (!window.confirm('用当前算法重新裁一遍这篇的图？节点、坐标、笔记和会话都不会动。')) return;
-    try {
-      setRecropping('读取原文…');
-      const response = await fetch(pdfUrl(paperId));
-      if (!response.ok) throw new Error((await response.text()) || '读不到原文 PDF');
-      const blob = await response.blob();
-      const file = new File([blob], 'source.pdf', { type: 'application/pdf' });
-      const extracted = await extractPaper(
-        file,
-        (progress) => setRecropping(progress.phase === 'read' ? `重新裁图：第 ${progress.page}/${progress.total} 页` : '整理中…'),
-        { includePdf: false },
-      );
-      if (extracted.figures.length === 0) throw new Error('这次没有裁出任何图（可能是扫描件）');
-      setRecropping(`替换 ${extracted.figures.length} 张图…`);
-      await api.replaceFigures(paperId, extracted.figures);
-      const fresh = await api.getPaper(paperId);
-      paperRef.current = fresh.paper;
-      setPaper(fresh.paper);
-      setAssetVersion((version) => version + 1);
-      setRecropping(null);
-      setRecropNote({ ok: true, text: `已重新裁出 ${extracted.figures.length} 张图` });
-      setError('');
-    } catch (e) {
-      setRecropping(null);
-      setRecropNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    }
-  };
 
   const persistView = useCallback(() => {
     update({
@@ -732,28 +701,6 @@ export function PaperView({ paperId, onClose, onChanged }) {
       React.createElement(Icon, { name: 'layers', size: 12 }),
       '整理布局',
     ),
-    React.createElement(
-      'button',
-      {
-        className: 'pd-btn pd-btn-ghost',
-        onClick: recrop,
-        disabled: Boolean(recropping),
-        title: '用当前算法重新裁一遍这篇的图（节点、坐标、笔记、会话都不动）',
-      },
-      React.createElement(Icon, { name: 'layers', size: 12 }),
-      recropping ?? '重新裁图',
-    ),
-    // 「整篇问答」= 把右侧栏从"某个节点"切回整篇，会话/笔记/core 都以整篇为范围
-    React.createElement(
-      'button',
-      {
-        className: 'pd-btn pd-btn-ghost',
-        disabled: !selectedBlock,
-        onClick: () => setSelectedBlock(null),
-        title: '把右侧栏从当前节点切回整篇：整篇的会话、笔记与 core 核',
-      },
-      '整篇问答',
-    ),
   );
 
   const edgeElements = [];
@@ -818,12 +765,12 @@ export function PaperView({ paperId, onClose, onChanged }) {
       )
     : null;
 
-  const recropBanner = recropNote
+  const recropBanner = notice
     ? React.createElement(
         'div',
-        { className: `pd-notice${recropNote.ok ? '' : ' pd-notice-error'}` },
-        React.createElement('div', { className: 'pd-notice-text' }, recropNote.text),
-        React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => setRecropNote(null) }, '知道了'),
+        { className: `pd-notice${notice.ok ? '' : ' pd-notice-error'}` },
+        React.createElement('div', { className: 'pd-notice-text' }, notice.text),
+        React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => setNotice(null) }, '知道了'),
       )
     : null;
 
@@ -906,6 +853,7 @@ export function PaperView({ paperId, onClose, onChanged }) {
           React.createElement(
             'div',
             { className: 'pd-node-body' },
+            block.section ? React.createElement('div', { className: 'pd-node-meta' }, `§${block.section}`) : null,
             block.latex ? React.createElement(Formula, { tex: block.latex, className: 'pd-node-latex' }) : null,
             block.text
               ? React.createElement(
@@ -915,18 +863,27 @@ export function PaperView({ paperId, onClose, onChanged }) {
                 )
               : null,
             figure
-              ? React.createElement('img', {
-                  className: 'pd-node-figure',
-                  src: assetUrl(paper.id, figure.file, assetVersion),
-                  alt: figure.caption,
-                  style: { marginTop: block.text ? 8 : 0 },
-                  onClick: (event) => {
-                    event.stopPropagation();
-                    // 刚拖过就别弹大图，避免"想拖却弹图"
-                    if (Date.now() - dragEndedAt.current < 250) return;
-                    setLightbox(assetUrl(paper.id, figure.file, assetVersion));
-                  },
-                })
+              ? React.createElement(
+                  'div',
+                  { className: 'pd-node-figure-box', style: { marginTop: block.text ? 8 : 0 } },
+                  React.createElement('img', {
+                    className: 'pd-node-figure',
+                    src: assetUrl(paper.id, figure.file, assetVersion),
+                    alt: figure.caption,
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      // 刚拖过就别弹大图，避免"想拖却弹图"
+                      if (Date.now() - dragEndedAt.current < 250) return;
+                      setLightbox({
+                        src: assetUrl(paper.id, figure.file, assetVersion),
+                        caption: figureLabel(figure) || figure.caption || '',
+                      });
+                    },
+                  }),
+                  figureLabel(figure)
+                    ? React.createElement('div', { className: 'pd-fig-cap', title: figure.caption ?? '' }, figureLabel(figure))
+                    : null,
+                )
               : null,
             connected[block.id]?.length ? React.createElement('div', { className: 'pd-sub', style: { marginTop: 6 } }, `→ 连到 ${connected[block.id].length} 个节点`) : null,
           ),
@@ -1053,7 +1010,13 @@ export function PaperView({ paperId, onClose, onChanged }) {
           },
         })
       : null,
-    lightbox ? React.createElement(Lightbox, { src: lightbox, onClose: () => setLightbox(null) }) : null,
+    lightbox
+      ? React.createElement(Lightbox, {
+          src: lightbox.src,
+          caption: lightbox.caption,
+          onClose: () => setLightbox(null),
+        })
+      : null,
   );
 }
 
@@ -1194,6 +1157,7 @@ function NodeEditModal({ block, figures, paperId, assetVersion, onClose, onSave,
                   title: figure.caption || `第 ${figure.page} 页`,
                 },
                 React.createElement('img', { src: assetUrl(paperId, figure.file, assetVersion), alt: figure.caption ?? '' }),
+                figureLabel(figure) ? React.createElement('span', { className: 'pd-fig-option-cap' }, figureLabel(figure)) : null,
               ),
             ),
           ),

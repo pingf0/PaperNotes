@@ -40,6 +40,57 @@ const MAX_FIGURE_WIDTH = 1400;
 /** 图注行正则。 */
 const CAPTION_RE = /^(figure|fig\.?|table|图|表)\s*([0-9]{1,2}|[IVX]{1,4})(?:[.:|)\-—、]|\s|$)\s*/i;
 
+/**
+ * 章节标题正则：`4.5 Results` / `3 Method` / `2.1. Problem Setup`。
+ * 只认"编号 + 大写开头的短标题"，避免把正文里的 `3.2 Our method is …` 当成标题。
+ */
+const SECTION_NUMBERED_RE = /^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+([A-Z][A-Za-z0-9&,\-/ ]{2,60})$/;
+/** 没有编号的常见章节名（Abstract 这类通常是单独一行）。 */
+const SECTION_NAMED_RE = /^(abstract|introduction|related work|background|preliminaries|method|methods|approach|proposed method|model|experiment|experiments|evaluation|results|discussion|conclusions?|limitations|future work|references|appendix[a-z0-9]*)$/i;
+
+/**
+ * 从一页的文本行里认出章节标题。
+ * 标题通常比正文大一号，所以无编号的标题再要求 fontHeight 明显高于本页中位数。
+ *
+ * @param {Array<{text: string, height: number}>} lines 本页文本行
+ * @param {number} bodyHeight 本页字号中位数
+ * @returns {string[]} 本页的章节标题（按出现顺序）
+ */
+function sectionLabels(lines, bodyHeight) {
+  const labels = [];
+  for (const line of lines) {
+    const text = String(line.text ?? '').replace(/\s+/g, ' ').trim();
+    if (text.length < 3 || text.length > 72) continue;
+    if (CAPTION_RE.test(text)) continue;
+    const numbered = text.match(SECTION_NUMBERED_RE);
+    if (numbered) {
+      const title = numbered[2].trim();
+      if (title.split(/\s+/).length <= 9 && !/[.;:,]$/.test(title)) labels.push(`${numbered[1]} ${title}`);
+      continue;
+    }
+    const named = text.match(SECTION_NAMED_RE);
+    if (named && line.height >= bodyHeight * 1.02) labels.push(text.replace(/^\d+\.?\s*/, ''));
+  }
+  return labels;
+}
+
+/**
+ * 给每张图找到它所在的板块：取"页码不晚于这张图"的最后一个章节标题。
+ * 图注所在页基本就在它所属章节里，按页近似足够准。
+ *
+ * @param {Array<{page: number, label: string}>} headings 全文章节标题（按页序）
+ * @param {number} page 图的页码
+ * @returns {string} 形如 `4.5 Results`，找不到时为空字符串
+ */
+function sectionForPage(headings, page) {
+  let found = '';
+  for (const heading of headings) {
+    if (heading.page <= page) found = heading.label;
+    else break;
+  }
+  return found;
+}
+
 /** worker 只设一次。 */
 let workerConfigured = false;
 
@@ -407,6 +458,8 @@ export async function extractPaper(file, onProgress = () => {}, options = {}) {
   const pageCount = Math.min(totalPages, MAX_PAGES);
   const pages = [];
   const figures = [];
+  /** 全文章节标题（页码 + 标题），用来给每张图定位板块。 */
+  const headings = [];
   try {
     for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
       onProgress({ phase: 'read', page: pageNumber, total: pageCount, figures: figures.length });
@@ -415,6 +468,10 @@ export async function extractPaper(file, onProgress = () => {}, options = {}) {
       const content = await page.getTextContent();
       const lines = toLines(content.items, viewport, pdfjs);
       pages.push({ page: pageNumber, text: lines.map((line) => line.text).join('\n') });
+      // 顺手记下这一页的章节标题：图要标"这张图在 4.5 Results"，靠的就是它
+      const heights = lines.map((line) => line.height).sort((a, b) => a - b);
+      const bodyHeight = heights[Math.floor(heights.length / 2)] ?? 10;
+      for (const label of sectionLabels(lines, bodyHeight)) headings.push({ page: pageNumber, label });
 
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(viewport.width);
@@ -584,6 +641,10 @@ export async function extractPaper(file, onProgress = () => {}, options = {}) {
     }
   } finally {
     await doc.destroy();
+  }
+  // 给每张图补上"它在论文哪一节"（图注编号在渲染时从 caption 里解析）
+  for (const figure of figures) {
+    if (!figure.section) figure.section = sectionForPage(headings, figure.page);
   }
   onProgress({ phase: 'encode', total: pageCount, figures: figures.length });
   return { pages, figures, pdfBase64, pageCount: totalPages };
