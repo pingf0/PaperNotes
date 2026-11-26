@@ -107,15 +107,36 @@ function flowLayout(blocks, edges, metrics) {
   }
   const COL_W = 380;
   const ROW_GAP = 36;
+  /** 一条横带最多几列：步骤链很长时折到下一行，不会拉成 5000px 的一条直线。 */
+  const MAX_COLS = 6;
+  /** 横带之间的竖向间隔。 */
+  const BAND_GAP = 90;
   const placed = [];
-  for (const [column, list] of [...columns.entries()].sort((a, b) => a[0] - b[0])) {
-    let y = 32;
-    const sorted = list.slice().sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
-    for (const block of sorted) {
-      const size = metrics[block.id] ?? { w: block.w ?? 300, h: block.figureId ? 360 : 220 };
-      placed.push({ ...block, x: 40 + column * COL_W, y });
-      y += size.h + ROW_GAP;
-    }
+
+  const columnKeys = [...columns.keys()].sort((a, b) => a - b);
+  const bandCount = Math.ceil(columnKeys.length / MAX_COLS);
+  let bandTop = 32;
+  for (let band = 0; band < bandCount; band += 1) {
+    const bandColumns = columnKeys.slice(band * MAX_COLS, (band + 1) * MAX_COLS);
+    let bandHeight = 0;
+    const positions = [];
+    bandColumns.forEach((column, localIndex) => {
+      // 奇数带反向排（蛇形）：上一带最后一列在右边，这一带的第一列也贴右边，连线只是一小段竖线
+      const visualCol = band % 2 === 1 ? MAX_COLS - 1 - localIndex : localIndex;
+      let y = bandTop;
+      const sorted = columns
+        .get(column)
+        .slice()
+        .sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+      for (const block of sorted) {
+        const size = metrics[block.id] ?? { w: block.w ?? 300, h: block.figureId ? 360 : 220 };
+        positions.push({ block, x: 40 + visualCol * COL_W, y });
+        y += size.h + ROW_GAP;
+      }
+      bandHeight = Math.max(bandHeight, y - bandTop);
+    });
+    for (const item of positions) placed.push({ ...item.block, x: item.x, y: item.y });
+    bandTop += bandHeight + BAND_GAP;
   }
   return placed;
 }

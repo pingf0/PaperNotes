@@ -175,6 +175,17 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('实验类：有现象节点', types.includes('phenomenon'), types.join(','));
   check('实验类：有结论节点', types.includes('conclusion'), types.join(','));
   check('实验类：没有公式节点', !types.includes('formula'), types.join(','));
+  // 实验流程是"先做这个、再做那个"：必须是一条链，不能全从原理射出去
+  const chain = built.edges.map((edge) => `${edge.from}>${edge.to}`);
+  check(
+    '实验类：步骤/现象/结论串成一条链',
+    ['b-principle>b-step-1', 'b-step-1>b-step-2', 'b-step-2>b-phenomenon-1', 'b-phenomenon-1>b-conclusion'].every((edge) => chain.includes(edge)),
+    chain.join(' '),
+  );
+  const indegree = new Map(built.blocks.map((block) => [block.id, 0]));
+  for (const edge of built.edges) indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
+  const branched = [...indegree.entries()].filter(([, count]) => count > 1);
+  check('实验类：链上每个节点最多一条入边（不是刺猬）', branched.length === 0, JSON.stringify(branched));
 }
 
 // 流程图模式：研究问题为主线时，节点按"问题 → 方法 → 实验 → 结论"横向排开

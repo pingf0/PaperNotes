@@ -29,6 +29,8 @@ const TEXT_W = 300;
 const FIGURE_W = 340;
 const FORMULA_W = 380;
 const COL_TEXT = 40;
+/** 线性流程里相邻步骤的横向间距。 */
+const COL_STEP = 380;
 const COL_FORMULA = 450;
 const COL_RESULT = 860;
 
@@ -380,8 +382,16 @@ export function buildBlocks(draft, figures, fallbackTitle) {
     edges.push({ from: principleId, to: id });
   });
 
-  // 实验类论文：操作步骤排在公式那一列（左侧第二列），现象排在结果那一列
+  // 实验类论文：步骤 → 现象 → 结果 → 结论 是"先做这个、再做那个"的过程，
+  // 必须串成一条链。之前每个节点都从「核心原理」射出去，排完版就是一列竖着的刺猬
+  // （用户反馈："步骤应该是线性连通的呀，为什么不连在一起"）。
   const stepBlocks = (Array.isArray(draft.steps) ? draft.steps : []).slice(0, 5);
+  const phenomenonBlocks = (Array.isArray(draft.phenomena) ? draft.phenomena : []).slice(0, 4);
+  const resultBlocks = (Array.isArray(draft.results) ? draft.results : []).slice(0, 4);
+  const conclusionText = String(draft.conclusion ?? '').trim();
+  /** 线性链上的节点 id，按"步骤 → 现象 → 结果 → 结论"排好。 */
+  const chain = [];
+
   stepBlocks.forEach((step, index) => {
     const id = `b-step-${index + 1}`;
     push({
@@ -390,13 +400,12 @@ export function buildBlocks(draft, figures, fallbackTitle) {
       title: String(step?.title ?? `步骤 ${index + 1}`).trim() || `步骤 ${index + 1}`,
       text: String(step?.text ?? '').trim(),
       x: COL_FORMULA,
-      y: 32 + index * 250,
+      y: 330,
       w: FORMULA_W,
     });
-    edges.push({ from: principleId, to: id });
+    chain.push(id);
   });
 
-  const phenomenonBlocks = (Array.isArray(draft.phenomena) ? draft.phenomena : []).slice(0, 4);
   phenomenonBlocks.forEach((item, index) => {
     const id = `b-phenomenon-${index + 1}`;
     const figure = figureFor(item?.figureIndex);
@@ -407,29 +416,12 @@ export function buildBlocks(draft, figures, fallbackTitle) {
       text: String(item?.text ?? '').trim(),
       figureId: figure?.id,
       x: COL_RESULT,
-      y: 330 + index * (figure ? 340 : 240),
+      y: 330,
       w: TEXT_W,
     });
-    edges.push({ from: principleId, to: id });
+    chain.push(id);
   });
 
-  const conclusionText = String(draft.conclusion ?? '').trim();
-  if (conclusionText.length > 0) {
-    const id = 'b-conclusion';
-    const baseY = 330 + phenomenonBlocks.length * 260;
-    push({
-      id,
-      type: 'conclusion',
-      title: '结论与意义',
-      text: conclusionText,
-      x: COL_RESULT,
-      y: baseY,
-      w: TEXT_W,
-    });
-    edges.push({ from: principleId, to: id });
-  }
-
-  const resultBlocks = (Array.isArray(draft.results) ? draft.results : []).slice(0, 4);
   resultBlocks.forEach((result, index) => {
     const id = `b-result-${index + 1}`;
     const figure = figureFor(result?.figureIndex);
@@ -440,11 +432,41 @@ export function buildBlocks(draft, figures, fallbackTitle) {
       text: String(result?.text ?? '').trim(),
       figureId: figure?.id,
       x: COL_RESULT,
-      y: 330 + (phenomenonBlocks.length * 260) + index * (figure ? 340 : 250),
+      y: 330,
       w: TEXT_W,
     });
-    edges.push({ from: principleId, to: id });
+    chain.push(id);
   });
+
+  if (conclusionText.length > 0) {
+    push({
+      id: 'b-conclusion',
+      type: 'conclusion',
+      title: '结论与意义',
+      text: conclusionText,
+      x: COL_RESULT,
+      y: 330,
+      w: TEXT_W,
+    });
+    chain.push('b-conclusion');
+  }
+
+  if (chain.length > 0) {
+    // 串成一条线：原理 → 步骤1 → 步骤2 → … → 现象 → 结果 → 结论
+    let previous = principleId;
+    for (const id of chain) {
+      edges.push({ from: previous, to: id });
+      previous = id;
+    }
+    // 初始坐标先摆成一行（导入后会立刻自动整理成蛇形）；没有步骤/现象的纯公式论文保持原布局
+    const linear = stepBlocks.length + phenomenonBlocks.length > 0;
+    chain.forEach((id, index) => {
+      const block = blocks.find((item) => item.id === id);
+      if (!block) return;
+      block.x = linear ? COL_FORMULA + index * COL_STEP : COL_RESULT;
+      block.y = linear ? 330 : 330 + index * 260;
+    });
+  }
 
   return {
     title: String(draft.title ?? '').trim() || fallbackTitle,
