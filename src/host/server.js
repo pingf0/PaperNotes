@@ -573,6 +573,8 @@ export function createServer(ctx, prefix) {
         doc.chats = migrated.chats;
         if (result.title) doc.title = result.title;
         if (result.abstract) doc.abstract = result.abstract;
+        // 重分析成功：之前"退回按章节切分"的警告不再成立
+        doc.warning = null;
         await writePaper(dir, body.id, doc);
         return sendJson(res, 200, {
           paper: summarize(doc),

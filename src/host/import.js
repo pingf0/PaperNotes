@@ -96,6 +96,34 @@ function buildPrompt(payload, digest, captions) {
   return { system, user };
 }
 
+/**
+ * 问模型要结构化 JSON。
+ *
+ * 有些模型（尤其带推理的）会把输出预算全花在 reasoning 上，正文一个字没有，
+ * 最终 finish=max-tokens —— 表现就是"导入出来的全是英文"（退回启发式分段，正文原样切）。
+ * 所以这里做一次降级重试：缩短正文 + 显式关推理（模型支持时才会真的传）。
+ *
+ * @param ctx 宿主上下文
+ * @param {{ system: string, user: string, digest: string }} prompt
+ * @returns {Promise<{ok: boolean, text?: string, error?: string}>}
+ */
+async function askStructure(ctx, { system, user, digest }) {
+  const attempt = (content, reasoningOff) =>
+    complete(ctx, {
+      system,
+      messages: [{ role: 'user', content }],
+      temperature: 0.2,
+      timeoutMs: 180_000,
+      maxTokens: 4096,
+      ...(reasoningOff ? { reasoningOff: true } : {}),
+    });
+  const first = await attempt(user, false);
+  if (first.ok || !/没有返回正文/.test(first.error ?? '')) return first;
+  // 只出推理 / 被长度截断：把正文砍到 24k，并请求关推理再问一次
+  const shorter = digest.length > 24_000 ? user.replace(digest, digest.slice(0, 24_000)) : user;
+  return attempt(shorter, true);
+}
+
 /** 章节切分用的标题正则。 */
 const SECTION_RE = /^(?:\d+(?:\.\d+)*\.?\s+)?(abstract|introduction|related work|background|method|methods|approach|proposed|model|experiment|experiments|evaluation|results|discussion|conclusion|limitation)s?\b/i;
 
@@ -448,12 +476,7 @@ export async function reanalyzePaper(ctx, doc) {
   const digest = digestText(pages);
   const captions = captionList(figures);
   const { system, user } = buildPrompt({ title: doc.title }, digest, captions);
-  const result = await complete(ctx, {
-    system,
-    messages: [{ role: 'user', content: user }],
-    temperature: 0.2,
-    timeoutMs: 180_000,
-  });
+  const result = await askStructure(ctx, { system, user, digest });
   if (!result.ok) throw new Error(`模型分析失败：${result.error}`);
   let parsed = parseJsonReply(result.text);
   if (!parsed || typeof parsed !== 'object') {
@@ -557,14 +580,8 @@ export async function structurePaper(ctx, payload) {
     draft = heuristicDraft(pages, figures);
   } else {
     const { system, user } = buildPrompt(payload, digest, captionList(figures));
-    const result = await complete(ctx, {
-      system,
-      messages: [{ role: 'user', content: user }],
-      temperature: 0.2,
-      timeoutMs: 180_000,
-      // 输出比导入时更容易撞上限（问题链字段多），给足空间
-      maxTokens: 4096,
-    });
+    // 推理模型可能把预算全花在思考上（finish=max-tokens、正文为空），这里带一次降级重试
+    const result = await askStructure(ctx, { system, user, digest });
     if (!result.ok) {
       warning = `模型分段失败（${result.error}），已退回按章节自动切分`;
       draft = heuristicDraft(pages, figures);

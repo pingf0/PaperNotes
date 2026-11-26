@@ -137,16 +137,26 @@ function toLines(items, viewport, pdfjs) {
     row.left = Math.min(row.left, left);
     row.right = Math.max(row.right, left + (item.width ?? 0) * RENDER_SCALE);
     row.height = Math.max(row.height, fontHeight);
-    row.pieces.push({ x: left, text: item.str });
+    row.pieces.push({ x: left, right: left + (item.width ?? 0) * RENDER_SCALE, text: item.str });
     rows.set(key, row);
   }
   const lines = [...rows.values()].map((row) => {
-    const text = row.pieces
-      .sort((a, b) => a.x - b.x)
-      .map((piece) => piece.text)
-      .join('')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // 不能直接 join('')：不少 PDF（尤其双栏 ACM 模板）把每个词甚至每个字形当成一个 text item，
+    // 直接拼会得到 "ExploringtheEfectsofSensoryConflicts" 这种没有空格的整段文本，
+    // 既毁掉模型输入，也让章节标题/图注的正则全部失效。
+    // 这里按"两个 item 之间的水平间隙"补空格：间隙 > 0.18em 视为词间距，字符间的小缝隙不补。
+    const pieces = row.pieces.sort((a, b) => a.x - b.x);
+    const wordGap = Math.max(1, (row.height || 10) * 0.18);
+    let text = '';
+    let previousRight = null;
+    for (const piece of pieces) {
+      if (previousRight !== null && piece.x - previousRight > wordGap && !/\s$/.test(text) && !/^\s/.test(piece.text)) {
+        text += ' ';
+      }
+      text += piece.text;
+      previousRight = piece.right ?? piece.x;
+    }
+    text = text.replace(/\s+/g, ' ').trim();
     return {
       text,
       top: row.baseline - row.height * 0.86,

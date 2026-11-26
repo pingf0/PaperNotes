@@ -737,9 +737,41 @@ bbox 是整页 612×792），所以"用 XObject bbox 精确框定图"这条路�
 预览台新增"图注必须有 §板块、公式节点必须有 §章节"两条断言、删掉按钮相关断言，明暗两套 `errors: none`；
 `npm test` 55/55、7/7、9/9、6/6、11/11。
 
+## 0.14.1：修"导入全是英文"（真因是推理吃光了输出）+ 导入/重分析后自动整理布局
+
+用户导入 *Exploring the Efects of Sensory Conflicts on Cognition* 后反馈"怎么全是英文"。
+
+**真因**（就写在 paper.json 的 `warning` 里，只是当时只在导入瞬间闪了一下）：
+
+```
+模型分段失败（模型没有返回正文：finish=max-tokens，只有推理没有正文（推理 15000 字符）），已退回按章节自动切分
+```
+
+推理模型把输出预算全花在 reasoning 上，正文一个字没吐出来，于是退回启发式分段 —— 那段是英文原文，
+所以满屏英文。**还叠了一个坑**：这篇 ACM 双栏 PDF 的 text item 是按词甚至按字形给的，
+`toLines` 直接 `join('')`，抽出来是 `ExploringtheEfectsofSensoryConflicts…`（空格率 0.15/100 字符），
+模型输入本来就不可读，章节/图注正则也匹配不到（所以那篇的图没有 § 板块）。
+
+三处改动：
+
+1. **按间隙补空格**：`toLines` 记录每个 item 的右边界，两个 item 的水平间隙 > 0.18em 视为词间距补空格
+   （字符间的小缝隙不补）。实测这篇 PDF：文字恢复成 `Exploring the Efects of Sensory Conflicts on Cognitive
+   Fatigue in VR Remappings`，章节标题也能认出来了（`2 RELATED WORK` / `4.5 Evaluation Methods` …）。
+2. **结构化调用带降级重试**：第一次原样问；只出推理 / 撞 max-tokens 时，把正文砍到 24k 并**显式关推理**再问一次
+   （`askStructure()`，导入与重新分析共用）。chat 早就有这套三段式，导入这边漏了。
+3. **警告不再只闪一下**：`paper.warning` 在画布顶部常驻一条红色提示，直到用户点「知道了」或重新分析成功
+   （重分析成功后宿主清掉 `doc.warning`）。
+
+另外按用户要求：**生成思路链之后自动整理布局**。导入成功或「重新分析」成功后，等所有节点量完尺寸再等 320ms
+（图片/公式撑开），自动跑一次 `flowLayout` 并「适应」视口；不用再手点「整理布局」。
+自动整理也走正常保存路径，所以「撤销」仍然可用（10 秒内）。
+
+验证：真实 PDF（`/Users/pingfan/Downloads/Exploring the Efects of …pdf`）上跑 pdf.js 抽页，空格率 0.15→14/100、
+章节标题识别 12 条；`npm test` 55/55、7/7、9/9、6/6、11/11；预览台明暗两套 `errors: none`。
+
 ## 当前安装版本
 
-`dsh-paper-desk@0.14.0`（generation `…+0.14.0+d54d81ce7505`，2026-11-27 00:30 装入）。
+`dsh-paper-desk@0.14.1`（generation `…+0.14.1+59887db111f2`，2026-11-27 01:0x 装入）。
 Plugin Manager 报 `restart-required`（package-moved）：**重启 DSH 桌面应用一次**，设置窗口的改动才会进内存。
 
 ### 0.1.0 在真实宿主上的实测（22:54）

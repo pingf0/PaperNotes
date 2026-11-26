@@ -145,9 +145,9 @@ function edgePath(from, to, metrics) {
 
 /**
  * 单篇论文工作台。
- * @param {{ paperId: string, onClose: () => void, onChanged: () => void }} props
+ * @param {{ paperId: string, onClose: () => void, onChanged: () => void, autoTidy?: boolean, onAutoTidyDone?: () => void }} props
  */
-export function PaperView({ paperId, onClose, onChanged }) {
+export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAutoTidyDone }) {
   const { useCallback, useEffect, useMemo, useRef, useState } = React;
   const [paper, setPaper] = useState(null);
   const [error, setError] = useState('');
@@ -163,6 +163,8 @@ export function PaperView({ paperId, onClose, onChanged }) {
     persistView();
   };
   const [metrics, setMetrics] = useState({});
+  /** 导入兜底的警告条是否已被用户关掉。 */
+  const [warningDismissed, setWarningDismissed] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
@@ -265,6 +267,10 @@ export function PaperView({ paperId, onClose, onChanged }) {
       paperRef.current = fresh.paper;
       setPaper(fresh.paper);
       setSelectedBlock(null);
+      setWarningDismissed(false);
+      // 新的思路链出来了：自动排一次版
+      autoTidied.current = false;
+      pendingTidy.current = true;
       setNotice({
         ok: true,
         text: `已重新分析：${result.blocks} 个节点，迁移 ${result.movedNotes ?? 0} 条笔记、${result.movedChats ?? 0} 段会话`,
@@ -440,6 +446,27 @@ export function PaperView({ paperId, onClose, onChanged }) {
   const blocks = paper?.blocks ?? [];
   const edges = paper?.edges ?? [];
   const figures = paper?.figures ?? [];
+
+  /** 生成思路链（导入 / 重新分析）之后自动排一次版：用户不用再点「整理布局」。 */
+  const autoTidied = useRef(false);
+  const pendingTidy = useRef(false);
+  useEffect(() => {
+    if (!paper || blocks.length === 0) return undefined;
+    if (!(autoTidy || pendingTidy.current) || autoTidied.current) return undefined;
+    // 等所有节点都量过尺寸（拿真实高度排版，不然图高的节点会叠在一起）
+    if (Object.keys(metrics).length < blocks.length) return undefined;
+    // 再等一拍：图片、公式刚挂上去时高度还会变
+    const timer = window.setTimeout(() => {
+      const next = flowLayout(blocks, paper.edges ?? [], metrics);
+      update({ blocks: next }, true);
+      fitBounds(boundsOf(next), { maxZoom: 1 });
+      autoFitted.current = true;
+      autoTidied.current = true;
+      pendingTidy.current = false;
+      onAutoTidyDone?.();
+    }, 320);
+    return () => window.clearTimeout(timer);
+  }, [autoTidy, paper, blocks, metrics, boundsOf, fitBounds, onAutoTidyDone]);
 
   /** 第一次打开（还没有存过缩放）时，自动把整张图放进视口。 */
   const autoFitted = useRef(false);
@@ -765,6 +792,21 @@ export function PaperView({ paperId, onClose, onChanged }) {
       )
     : null;
 
+  /** 导入时模型失败会退回按章节切分，节点会是英文原文 —— 这条提示要留到用户真正重分析。 */
+  const warningBanner =
+    paper?.warning && !warningDismissed
+      ? React.createElement(
+          'div',
+          { className: 'pd-notice pd-notice-error' },
+          React.createElement(
+            'div',
+            { className: 'pd-notice-text' },
+            `${paper.warning}。现在的节点是按章节兜底切出来的（正文原样，没有整理成中文），点「重新分析」可以再试一次。`,
+          ),
+          React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => setWarningDismissed(true) }, '知道了'),
+        )
+      : null;
+
   const recropBanner = notice
     ? React.createElement(
         'div',
@@ -938,7 +980,7 @@ export function PaperView({ paperId, onClose, onChanged }) {
   return React.createElement(
     'div',
     { className: 'pd-body' },
-    React.createElement('div', { className: 'pd-main' }, toolbar, recropBanner, layoutBanner, canvas),
+    React.createElement('div', { className: 'pd-main' }, toolbar, warningBanner, recropBanner, layoutBanner, canvas),
     drawerOpen
       ? React.createElement(Drawer, {
           paper,

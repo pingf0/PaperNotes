@@ -32,6 +32,8 @@ export function PaperDesk({ registerStyle }) {
   const [sort, setSort] = useState('recent');
   const [selected, setSelected] = useState([]);
   const [paperId, setPaperId] = useState(null);
+  /** 刚导入的论文 id：打开后自动整理一次布局。 */
+  const [tidyAfterImport, setTidyAfterImport] = useState(null);
   const [importing, setImporting] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [compareIds, setCompareIds] = useState(null);
@@ -114,6 +116,7 @@ export function PaperDesk({ registerStyle }) {
         await refresh();
         setImporting(null);
         setPaperId(result.id);
+        setTidyAfterImport(result.id);
         if (result.warning) setError(result.warning);
       } catch (e) {
         setImporting(null);
@@ -427,6 +430,9 @@ export function PaperDesk({ registerStyle }) {
         paperId,
         onClose: () => setPaperId(null),
         onChanged: refresh,
+        // 刚导入的这篇：节点量完尺寸后自动排一次版（用户不用再点「整理布局」）
+        autoTidy: tidyAfterImport === paperId,
+        onAutoTidyDone: () => setTidyAfterImport(null),
       })
     : compareIds
       ? React.createElement(CompareView, {
