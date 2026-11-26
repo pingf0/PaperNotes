@@ -226,6 +226,15 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('流程图：两个问题的结论各自独立', byType('conclusion').length === 2);
 }
 
+// 正文裁剪必须保留头尾：只截头部会把实验/结果/结论整段丢掉，模型就只回动机+原理+公式
+{
+  const { trimDigest } = await import('../src/host/import.js');
+  const long = 'HEAD'.repeat(10000) + 'TAIL'.repeat(10000);
+  const trimmed = trimDigest(long, 10000);
+  check('正文裁剪保留头尾（结果段不会丢）', trimmed.length <= 10100 && trimmed.startsWith('HEAD') && trimmed.endsWith('TAIL'), `${trimmed.length}`);
+  check('短正文不裁剪', trimDigest('abc', 100) === 'abc');
+}
+
 // 问题链模式也要把核心公式建出来（之前被 return 跳过，用户反馈"最新的思路流没有公式"）
 {
   const { buildBlocks } = await import('../src/host/import.js');
@@ -252,6 +261,30 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
     `principle ${principle.x},${principle.y} → ` + formulaBlocks.map((b) => `${b.x},${b.y}`).join(' '),
   );
   check('流程图：公式挂在原理节点上', flow.edges.some((edge) => edge.from === principle.id && edge.to === formulaBlocks[0].id));
+  const withResults = buildBlocks(
+    {
+      title: 'formulas + results',
+      motivation: 'm',
+      principle: { summary: 'p', figureIndex: -1 },
+      formulas: [{ name: '目标函数', latex: 'L=\\sum x', explain: '训练目标' }],
+      results: [
+        { title: '效果更好', text: 'r1', figureIndex: -1 },
+        { title: '消融有效', text: 'r2', figureIndex: -1 },
+      ],
+      conclusion: 'c',
+    },
+    [],
+    't',
+  );
+  const typesWithResults = withResults.blocks.map((block) => block.type);
+  check(
+    '公式 + 结果同时存在时，问题链与公式都在（板块不会变少）',
+    typesWithResults.filter((type) => type === 'question').length === 2
+      && typesWithResults.includes('formula')
+      && typesWithResults.includes('method')
+      && typesWithResults.includes('phenomenon'),
+    typesWithResults.join(','),
+  );
   check('流程图：公式带上所在章节', formulaBlocks[0].section === '3.2 Method', JSON.stringify(formulaBlocks.map((b) => b.section)));
   const withWhere = buildBlocks(
     {

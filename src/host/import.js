@@ -112,20 +112,85 @@ function buildPrompt(payload, digest, captions) {
  * @returns {Promise<{ok: boolean, text?: string, error?: string}>}
  */
 async function askStructure(ctx, { system, user, digest }) {
-  const attempt = (content, reasoningOff) =>
+  const attempt = (content, reasoningOff, maxTokens = 8192) =>
     complete(ctx, {
       system,
       messages: [{ role: 'user', content }],
       temperature: 0.2,
       timeoutMs: 180_000,
-      maxTokens: 4096,
+      // 结构化 JSON 比问答长得多：4096 很容易被"推理 + 正文"一起吃满，
+      // 截断后模型只回一半字段，节点就少了一截。
+      maxTokens,
       ...(reasoningOff ? { reasoningOff: true } : {}),
     });
   const first = await attempt(user, false);
-  if (first.ok || !/没有返回正文/.test(first.error ?? '')) return first;
-  // 只出推理 / 被长度截断：把正文砍到 24k，并请求关推理再问一次
-  const shorter = digest.length > 24_000 ? user.replace(digest, digest.slice(0, 24_000)) : user;
-  return attempt(shorter, true);
+  if (first.ok) return first;
+  // 有的服务商 max_tokens 上限还是 4096：被参数拒了就降一档重试，别整篇退回兜底
+  if (/max[_ ]?tokens?|invalid|400/i.test(first.error ?? '')) return attempt(user, false, 4096);
+  if (!/没有返回正文/.test(first.error ?? '')) return first;
+  // 只出推理 / 撞上限：保留**头尾**再问一次。
+  // 只留头部会把实验/结果/结论整段丢掉，模型就只能给出动机+原理+公式（论文"板块变少"就是这么来的）。
+  const trimmed = trimDigest(digest);
+  const retryUser = trimmed === digest ? user : user.replace(digest, trimmed);
+  return attempt(retryUser, true);
+}
+
+/**
+ * 正文太长时保留头尾。结果与结论通常在后面，只截头部会把它们整段丢掉。
+ * @param {string} digest 送进模型的正文
+ * @param {number} budget 保留的总字符数
+ * @returns {string}
+ */
+export function trimDigest(digest, budget = 48_000) {
+  const text = String(digest ?? '');
+  if (text.length <= budget) return text;
+  const head = Math.floor(budget * 0.55);
+  const tail = budget - head;
+  return `${text.slice(0, head)}\n\n[... 中间省略 ...]\n\n${text.slice(-tail)}`;
+}
+
+/**
+ * 兜底：模型只回了一半字段（输出被截断、或者偷懒只写公式）时，单独补问"结果与结论"。
+ * 否则一篇论文只剩 动机+原理+公式 三五个板块，用户会以为功能坏了。
+ *
+ * @param ctx 宿主上下文
+ * @param {object} draft 已解析的草稿
+ * @param {{ captions: string, digest: string }} context
+ * @returns {Promise<object>} 补齐后的草稿（补不到就原样返回）
+ */
+async function ensureResultCoverage(ctx, draft, { captions, digest }) {
+  const has = (list) => Array.isArray(list) && list.length > 0;
+  if (has(draft?.results) || has(draft?.phenomena) || has(draft?.steps)) return draft;
+  const result = await complete(ctx, {
+    system: '你只输出一个 JSON 对象，不输出解释、前言或 markdown 围栏。',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          '下面是一篇论文的正文节选与图注。只提炼"结果"与"结论"，严格按这个 JSON 输出：',
+          '{"results": [{ "title": "结果短标题", "text": "这个结果说明了什么（中文 2-3 句）", "figureIndex": 对应图编号，没有就 -1 }], "conclusion": "结论与意义（中文 2-4 句）"}',
+          '最多 4 条 results；figureIndex 只能取图注清单里出现过的编号，拿不准写 -1，不要编造。',
+          '',
+          '=== 图注清单 ===',
+          captions,
+          '',
+          '=== 正文（节选） ===',
+          trimDigest(digest, 30_000),
+        ].join('\n'),
+      },
+    ],
+    temperature: 0.2,
+    timeoutMs: 120_000,
+    maxTokens: 2048,
+  });
+  if (!result.ok) return draft;
+  const parsed = parseJsonReply(result.text);
+  if (!parsed || typeof parsed !== 'object') return draft;
+  return {
+    ...draft,
+    results: has(parsed.results) ? parsed.results : draft.results,
+    conclusion: String(draft.conclusion ?? '').trim() || String(parsed.conclusion ?? '').trim(),
+  };
 }
 
 /** 章节切分用的标题正则。 */
@@ -533,7 +598,8 @@ export async function reanalyzePaper(ctx, doc) {
     const preview = String(result.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
     throw new Error(`模型返回的不是合法 JSON（开头：${preview || '空'}）。可以再试一次，或换一个模型。`);
   }
-  const built = buildBlocks(parsed, figures, String(doc.title ?? '未命名论文'));
+  const enriched = await ensureResultCoverage(ctx, parsed, { captions, digest });
+  const built = buildBlocks(enriched, figures, String(doc.title ?? '未命名论文'));
   return { blocks: built.blocks, edges: built.edges, title: built.title, abstract: built.abstract };
 }
 
@@ -619,7 +685,12 @@ export async function structurePaper(ctx, payload) {
         warning = '模型返回的不是合法 JSON，已退回按章节自动切分';
         draft = heuristicDraft(pages, figures);
       } else {
-        draft = parsed;
+        draft = await ensureResultCoverage(ctx, parsed, { captions: captionList(figures), digest });
+        // 兜底也补不到：至少把原因说出来，别让用户对着 5 个节点猜
+        const empty = (list) => !Array.isArray(list) || list.length === 0;
+        if (empty(draft.results) && empty(draft.phenomena) && empty(draft.steps)) {
+          warning = '模型只返回了动机/原理/公式，结果与结论缺失；可以点「重新分析」再试一次，或换一个模型';
+        }
       }
     }
   }
