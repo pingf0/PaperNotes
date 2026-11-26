@@ -424,7 +424,28 @@ export async function reanalyzePaper(ctx, doc) {
     timeoutMs: 180_000,
   });
   if (!result.ok) throw new Error(`模型分析失败：${result.error}`);
-  const parsed = parseJsonReply(result.text);
+  let parsed = parseJsonReply(result.text);
+  if (!parsed || typeof parsed !== 'object') {
+    // 补救一次：把原始输出丢回去，只要求它修成严格 JSON（比让用户重试更可靠）
+    const repair = await complete(ctx, {
+      system: '你只输出严格 JSON，不要解释，不要 markdown 围栏。',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            '下面这段本来应该是论文结构 JSON，但格式坏了（可能被截断）。请补全并输出完整、合法的 JSON，',
+            '保持原有字段名，字段过长可以压缩，但不要新增解释文字。',
+            '',
+            String(result.text ?? '').slice(0, 12_000),
+          ].join('\n'),
+        },
+      ],
+      temperature: 0,
+      timeoutMs: 120_000,
+      maxTokens: 4096,
+    });
+    if (repair.ok) parsed = parseJsonReply(repair.text);
+  }
   if (!parsed || typeof parsed !== 'object') throw new Error('模型返回的不是合法 JSON，请重试');
   const built = buildBlocks(parsed, figures, String(doc.title ?? '未命名论文'));
   return { blocks: built.blocks, edges: built.edges, title: built.title, abstract: built.abstract };
@@ -501,7 +522,14 @@ export async function structurePaper(ctx, payload) {
     draft = heuristicDraft(pages, figures);
   } else {
     const { system, user } = buildPrompt(payload, digest, captionList(figures));
-    const result = await complete(ctx, { system, messages: [{ role: 'user', content: user }], temperature: 0.2, timeoutMs: 180_000 });
+    const result = await complete(ctx, {
+      system,
+      messages: [{ role: 'user', content: user }],
+      temperature: 0.2,
+      timeoutMs: 180_000,
+      // 输出比导入时更容易撞上限（问题链字段多），给足空间
+      maxTokens: 4096,
+    });
     if (!result.ok) {
       warning = `模型分段失败（${result.error}），已退回按章节自动切分`;
       draft = heuristicDraft(pages, figures);

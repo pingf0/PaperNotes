@@ -186,14 +186,82 @@ export async function streamText(ctx, options, onEvent = () => {}) {
  */
 export function parseJsonReply(text) {
   if (typeof text !== 'string') return undefined;
+  const candidates = [];
+  // 1) ```json 围栏里的内容
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const body = fenced ? fenced[1] : text;
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start < 0 || end <= start) return undefined;
-  try {
-    return JSON.parse(body.slice(start, end + 1));
-  } catch {
-    return undefined;
+  if (fenced) candidates.push(fenced[1]);
+  // 2) 整段原文
+  candidates.push(text);
+  // 3) 第一个 { 到最后一个 }（模型爱在前后加解释）
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) candidates.push(text.slice(start, end + 1));
+
+  for (const raw of candidates) {
+    const open = raw.indexOf('{');
+    if (open < 0) continue;
+    const close = raw.lastIndexOf('}');
+    // 没有闭合括号说明被截断了：从 { 开始整段拿来，交给下面的补齐逻辑
+    const body = close > open ? raw.slice(open, close + 1) : raw.slice(open);
+    if (body.length < 2) continue;
+    const attempts = [
+      body,
+      // 尾逗号 / 全角引号 / 未转义换行：常见的手写 JSON 毛病
+      body
+        .replace(/,\s*([}\]])/g, '$1')
+        .replace(/[\u201c\u201d]/g, '"')
+        .replace(/[\u2018\u2019]/g, "'"),
+    ];
+    for (const attempt of attempts) {
+      try {
+        const parsed = JSON.parse(attempt);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        /* 换下一种写法 */
+      }
+    }
+    // 4) 被截断的 JSON：补齐未闭合的括号再试
+    const repaired = closeTruncatedJson(body);
+    if (repaired) {
+      try {
+        const parsed = JSON.parse(repaired);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        /* 补不齐就算了 */
+      }
+    }
   }
+  return undefined;
+}
+
+/**
+ * 把"被截断的 JSON"尽量补成可解析的：按括号栈补齐，并去掉尾部不完整的键值。
+ * 模型输出撞到 maxTokens 时很常见，能救回来比直接报错好。
+ * @param {string} body 以 `{` 开头的片段
+ * @returns {string|null}
+ */
+function closeTruncatedJson(body) {
+  let text = body.trim();
+  // 去掉尾部半截的 "key": "value 之类
+  text = text.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '');
+  text = text.replace(/,\s*$/, '');
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (const char of text) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') inString = !inString;
+    else if (!inString && (char === '{' || char === '[')) stack.push(char);
+    else if (!inString && (char === '}' || char === ']')) stack.pop();
+  }
+  if (inString) text += '"';
+  while (stack.length > 0) text += stack.pop() === '{' ? '}' : ']';
+  return text.length > 2 ? text : null;
 }

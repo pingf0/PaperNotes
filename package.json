@@ -1,6 +1,6 @@
 {
   "name": "dsh-paper-desk",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "private": true,
   "description": "PaperNotes：把读过的论文拆成可拖拽的思维节点，逐块提问、记笔记、凝练成读后整理，并支持多论文对比。",
   "type": "module",
@@ -24,7 +24,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node tests/smoke.mjs && node tests/client-bundle.mjs && node tests/tex-wrap.mjs && node tests/llm-empty.mjs",
+    "test": "node tests/smoke.mjs && node tests/json-repair.mjs && node tests/client-bundle.mjs && node tests/tex-wrap.mjs && node tests/llm-empty.mjs",
     "test:ui": "node tests/preview.mjs"
   },
   "devDependencies": {
