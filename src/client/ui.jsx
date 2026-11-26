@@ -59,8 +59,35 @@ export function Spinner() {
  * 通用弹窗：点遮罩或 Esc 关闭。
  * @param {{ title: string, onClose: () => void, children: any, footer?: any, width?: number }} props
  */
-export function Modal({ title, onClose, children, footer, width }) {
-  const { useEffect } = React;
+export function Modal({ title, onClose, children, footer, width, ratio }) {
+  const { useEffect, useState } = React;
+  /** 窗口变化时重算：按黄金比例给的尺寸不能超出视口。 */
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window === 'undefined' ? 1440 : window.innerWidth,
+    h: typeof window === 'undefined' ? 900 : window.innerHeight,
+  }));
+  useEffect(() => {
+    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  /**
+   * 按比例算尺寸：宽度优先，高度 = 宽 / ratio；放不下就先压宽度（视口 88%）。
+   * @returns {{width?: number, height?: number}}
+   */
+  const size = (() => {
+    if (!width) return {};
+    if (!ratio) return { width };
+    const maxW = Math.max(320, Math.floor(viewport.w * 0.9));
+    const maxH = Math.max(280, Math.floor(viewport.h * 0.88));
+    let w = Math.min(width, maxW);
+    let h = Math.round(w / ratio);
+    if (h > maxH) {
+      h = maxH;
+      w = Math.min(maxW, Math.round(h * ratio));
+    }
+    return { width: w, height: h };
+  })();
   useEffect(() => {
     const onKey = (event) => {
       if (event.key === 'Escape') onClose();
@@ -82,7 +109,7 @@ export function Modal({ title, onClose, children, footer, width }) {
         className: 'pd-modal',
         role: 'dialog',
         'aria-label': title,
-        ...(width ? { style: { width } } : {}),
+        ...(width ? { style: size } : {}),
       },
       React.createElement('div', { className: 'pd-modal-head' }, title),
       React.createElement('div', { className: 'pd-modal-body' }, children),

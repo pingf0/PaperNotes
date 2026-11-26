@@ -400,9 +400,10 @@ export const CSS = `
 .pd-card-detail .pd-field-label { margin: 10px 0 4px; }
 
 .pd-tabs-inset { padding: 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l1, #eee); }
+/* 弹窗是固定高度时，正文自己吃掉剩余空间并滚动 */
 .pd-settings-body {
   padding: 18px 22px; display: flex; flex-direction: column; gap: 14px;
-  overflow-y: auto; max-height: 72vh; min-height: 220px;
+  overflow-y: auto; min-height: 0; flex: 1 1 auto;
 }
 .pd-row { display: flex; align-items: center; gap: 8px; }
 .pd-row-end { justify-content: flex-end; }

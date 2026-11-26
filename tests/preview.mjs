@@ -755,6 +755,10 @@ await page.waitForTimeout(200);
 {
   await page.click('.pd-top button[title="设置数据目录"]');
   await page.waitForSelector('.pd-settings-body');
+  // 黄金比例：宽高比应接近 1.618（视口放得下时）
+  const modalBox = await page.locator('.pd-modal').first().boundingBox();
+  const ratio = modalBox.width / modalBox.height;
+  if (Math.abs(ratio - 1.618) > 0.05) errors.push(`设置弹窗不是黄金比例：${ratio.toFixed(3)}（${Math.round(modalBox.width)}×${Math.round(modalBox.height)}）`);
   const tabs = await page.locator('.pd-tabs-inset .pd-tab').allInnerTexts();
   if (tabs.length < 3) errors.push('设置里页签不足三个：' + tabs.join(','));
   await page.locator('.pd-tabs-inset .pd-tab', { hasText: '模型' }).first().click();

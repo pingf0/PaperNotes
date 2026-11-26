@@ -891,7 +891,9 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
     {
       title: '设置',
       onClose,
+      // 黄金比例：宽 900 → 高约 556，宽高比 1.618
       width: 900,
+      ratio: 1.618,
       footer: [
         React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '关闭'),
         React.createElement('button', { key: 's', className: 'pd-btn pd-btn-primary', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
