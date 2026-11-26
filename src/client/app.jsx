@@ -467,15 +467,76 @@ export function PaperDesk({ registerStyle }) {
  * 数据目录设置。
  * @param {{ dir: string, llmReady?: boolean, onClose: () => void, onSaved: (dir: string) => void }} props
  */
+/** 目录选择器：点着往下走，选完返回绝对路径（不写文件，只读目录）。 */
+function DirPicker({ initial, onCancel, onPick }) {
+  const { useEffect, useState } = React;
+  const [current, setCurrent] = useState(initial ?? '');
+  const [parent, setParent] = useState('');
+  const [dirs, setDirs] = useState([]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .listDirs(current)
+      .then((result) => {
+        if (!alive) return;
+        setCurrent(result.path);
+        setParent(result.parent ?? '');
+        setDirs(result.dirs ?? []);
+        setError('');
+      })
+      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      alive = false;
+    };
+  }, [current]);
+
+  return React.createElement(
+    'div',
+    { className: 'pd-dir-picker' },
+    React.createElement('div', { className: 'pd-dir-path', title: current }, current || '（家目录）'),
+    React.createElement(
+      'div',
+      { className: 'pd-dir-list' },
+      parent
+        ? React.createElement('button', { className: 'pd-dir-item is-parent', onClick: () => setCurrent(parent) }, '↑ 上一级')
+        : null,
+      ...dirs.map((name) =>
+        React.createElement(
+          'button',
+          {
+            key: name,
+            className: 'pd-dir-item',
+            onClick: () => setCurrent(`${current.replace(/[\\/]+$/, '')}/${name}`),
+          },
+          name,
+        ),
+      ),
+      dirs.length === 0 && !error ? React.createElement('div', { className: 'pd-hint' }, '这个目录下没有子目录') : null,
+    ),
+    error ? React.createElement('div', { className: 'pd-error' }, error) : null,
+    React.createElement(
+      'div',
+      { className: 'pd-dir-foot' },
+      React.createElement('button', { className: 'pd-btn', onClick: onCancel }, '取消'),
+      React.createElement('button', { className: 'pd-btn pd-btn-primary', onClick: () => onPick(current) }, '选用这个目录'),
+    ),
+  );
+}
+
 function SettingsModal({ dir, llmReady, onClose, onSaved }) {
   const { useEffect, useState } = React;
   const [tab, setTab] = useState('dir');
   const [value, setValue] = useState(dir);
+  const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [settings, setSettings] = useState(null);
+  const [draft, setDraft] = useState(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [advanced, setAdvanced] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -489,20 +550,26 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
   }, []);
 
   const patch = (changes) => setSettings((current) => ({ ...current, ...changes }));
+  const models = settings?.models ?? [];
+
   const save = async () => {
     if (!settings) return;
     setBusy(true);
     setError('');
     try {
-      if (tab === 'dir' && value.trim().length > 0 && value.trim() !== dir) {
+      if (value.trim().length > 0 && value.trim() !== dir) {
         const result = await api.setDataDir(value.trim());
         onSaved(result.dataDir);
       }
       const saved = await api.saveSettings({
-        provider: settings.provider,
-        baseUrl: settings.baseUrl,
-        apiKey: settings.apiKey,
-        model: settings.model,
+        models: models.map((item) => ({
+          id: item.id,
+          name: item.name,
+          baseUrl: item.baseUrl,
+          apiKey: item.apiKey,
+          model: item.model,
+        })),
+        activeModelId: settings.activeModelId ?? '',
         temperature: settings.temperature,
         persona: settings.persona,
         prompts: settings.prompts,
@@ -530,14 +597,21 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
       'div',
       { className: 'pd-field' },
       React.createElement('span', { className: 'pd-field-label' }, '数据目录'),
-      React.createElement('input', { className: 'pd-input', value, onChange: (event) => setValue(event.target.value) }),
+      React.createElement(
+        'div',
+        { className: 'pd-row' },
+        React.createElement('input', { className: 'pd-input', value, onChange: (event) => setValue(event.target.value) }),
+        React.createElement(
+          'button',
+          { className: 'pd-btn', onClick: () => setPicking(true) },
+          '选择…',
+        ),
+      ),
     ),
     React.createElement(
       'div',
       { className: 'pd-hint' },
-      '论文、裁出来的图、笔记和会话都存在这个目录下（index.json + papers/<id>/）。换目录等于换一个论文库：旧目录的内容不会自动搬过去，确认后再切。',
-      React.createElement('br'),
-      `模型：${llmReady ? '已就绪' : '不可用——去「模型 API」配一个，或在 DSH 里选好模型'}`,
+      dir === value ? '论文、图、笔记与会话都存在这里。' : '换目录等于换一个论文库，旧内容不会自动搬过去。',
     ),
   );
 
@@ -546,91 +620,134 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
     : React.createElement(
         'div',
         null,
-        React.createElement(
-          'div',
-          { className: 'pd-field' },
-          React.createElement('span', { className: 'pd-field-label' }, '模型来源'),
-          React.createElement(Dropdown, {
-            value: settings.provider,
-            onChange: (next) => patch({ provider: next }),
-            groups: [
-              {
-                items: [
-                  { value: 'host', label: 'DSH 自带的模型（默认）' },
-                  { value: 'custom', label: '自定义接口（OpenAI 兼容）' },
-                ],
-              },
-            ],
-          }),
+        models.length === 0 && !draft
+          ? React.createElement('div', { className: 'pd-hint' }, '还没有添加模型。用 DSH 自带的模型也可以直接开始。')
+          : null,
+        ...models.map((item) =>
+          React.createElement(
+            'div',
+            { key: item.id, className: 'pd-model-row' },
+            React.createElement(
+              'label',
+              { className: 'pd-model-main' },
+              React.createElement('input', {
+                type: 'radio',
+                name: 'active-model',
+                checked: (settings.activeModelId ?? '') === item.id,
+                onChange: () => patch({ activeModelId: item.id }),
+              }),
+              React.createElement(
+                'div',
+                null,
+                React.createElement('div', { className: 'pd-model-name' }, item.name),
+                React.createElement('div', { className: 'pd-model-sub' }, `${item.model} · ${item.baseUrl}`),
+              ),
+            ),
+            React.createElement(
+              'div',
+              { className: 'pd-model-actions' },
+              React.createElement(
+                'button',
+                {
+                  className: 'pd-btn pd-btn-sm',
+                  onClick: async () => {
+                    setTesting(true);
+                    setTestResult(null);
+                    try {
+                      setTestResult({ id: item.id, ...(await api.testSettings(item)) });
+                    } catch (e) {
+                      setTestResult({ id: item.id, ok: false, error: e instanceof Error ? e.message : String(e) });
+                    } finally {
+                      setTesting(false);
+                    }
+                  },
+                },
+                '测试',
+              ),
+              React.createElement(
+                'button',
+                {
+                  className: 'pd-btn pd-btn-sm pd-btn-ghost pd-danger',
+                  onClick: () =>
+                    patch({
+                      models: models.filter((entry) => entry.id !== item.id),
+                      activeModelId: settings.activeModelId === item.id ? '' : settings.activeModelId,
+                    }),
+                },
+                '删除',
+              ),
+            ),
+          ),
         ),
-        settings.provider === 'custom'
+        draft
           ? React.createElement(
               'div',
-              { className: 'pd-settings-grid' },
+              { className: 'pd-model-draft' },
               React.createElement(
                 'div',
-                { className: 'pd-field' },
-                React.createElement('span', { className: 'pd-field-label' }, '服务预设'),
-                React.createElement(Dropdown, {
-                  value: '',
-                  onChange: (id) => {
-                    const preset = (settings.presets ?? []).find((item) => item.id === id);
-                    if (preset) patch({ baseUrl: preset.baseUrl, model: preset.model });
-                  },
-                  groups: [{ items: (settings.presets ?? []).map((item) => ({ value: item.id, label: item.name })) }],
-                }),
+                { className: 'pd-settings-grid' },
+                React.createElement(
+                  'div',
+                  { className: 'pd-field' },
+                  React.createElement('span', { className: 'pd-field-label' }, '服务预设'),
+                  React.createElement(Dropdown, {
+                    value: '',
+                    onChange: (id) => {
+                      const preset = (settings.presets ?? []).find((entry) => entry.id === id);
+                      if (preset) setDraft({ ...draft, baseUrl: preset.baseUrl, model: preset.model });
+                    },
+                    groups: [{ items: (settings.presets ?? []).map((entry) => ({ value: entry.id, label: entry.name })) }],
+                  }),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'pd-field' },
+                  React.createElement('span', { className: 'pd-field-label' }, '显示名称'),
+                  React.createElement('input', {
+                    className: 'pd-input',
+                    placeholder: 'Kimi / 我的中转站',
+                    value: draft.name,
+                    onChange: (event) => setDraft({ ...draft, name: event.target.value }),
+                  }),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'pd-field' },
+                  React.createElement('span', { className: 'pd-field-label' }, 'Base URL'),
+                  React.createElement('input', {
+                    className: 'pd-input',
+                    placeholder: 'https://api.moonshot.cn/v1',
+                    value: draft.baseUrl,
+                    onChange: (event) => setDraft({ ...draft, baseUrl: event.target.value }),
+                  }),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'pd-field' },
+                  React.createElement('span', { className: 'pd-field-label' }, 'API Key'),
+                  React.createElement('input', {
+                    className: 'pd-input',
+                    type: 'password',
+                    placeholder: 'sk-…',
+                    value: draft.apiKey,
+                    onChange: (event) => setDraft({ ...draft, apiKey: event.target.value }),
+                  }),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'pd-field' },
+                  React.createElement('span', { className: 'pd-field-label' }, '模型名'),
+                  React.createElement('input', {
+                    className: 'pd-input',
+                    placeholder: 'moonshot-v1-32k',
+                    value: draft.model,
+                    onChange: (event) => setDraft({ ...draft, model: event.target.value }),
+                  }),
+                ),
               ),
               React.createElement(
                 'div',
-                { className: 'pd-field' },
-                React.createElement('span', { className: 'pd-field-label' }, 'Base URL（OpenAI 兼容）'),
-                React.createElement('input', {
-                  className: 'pd-input',
-                  placeholder: 'https://api.openai.com/v1',
-                  value: settings.baseUrl ?? '',
-                  onChange: (event) => patch({ baseUrl: event.target.value }),
-                }),
-              ),
-              React.createElement(
-                'div',
-                { className: 'pd-field' },
-                React.createElement('span', { className: 'pd-field-label' }, 'API Key'),
-                React.createElement('input', {
-                  className: 'pd-input',
-                  type: 'password',
-                  placeholder: settings.hasKey ? '已保存（留空则不修改）' : 'sk-…',
-                  value: settings.apiKey ?? '',
-                  onChange: (event) => patch({ apiKey: event.target.value }),
-                }),
-              ),
-              React.createElement(
-                'div',
-                { className: 'pd-field' },
-                React.createElement('span', { className: 'pd-field-label' }, '模型名'),
-                React.createElement('input', {
-                  className: 'pd-input',
-                  placeholder: 'gpt-4o-mini / moonshot-v1-32k / deepseek-chat',
-                  value: settings.model ?? '',
-                  onChange: (event) => patch({ model: event.target.value }),
-                }),
-              ),
-              React.createElement(
-                'div',
-                { className: 'pd-field' },
-                React.createElement('span', { className: 'pd-field-label' }, `温度 ${Number(settings.temperature ?? 0.5).toFixed(1)}`),
-                React.createElement('input', {
-                  className: 'pd-range',
-                  type: 'range',
-                  min: 0,
-                  max: 1.5,
-                  step: 0.1,
-                  value: settings.temperature ?? 0.5,
-                  onChange: (event) => patch({ temperature: Number(event.target.value) }),
-                }),
-              ),
-              React.createElement(
-                'div',
-                { className: 'pd-field' },
+                { className: 'pd-row pd-row-end' },
                 React.createElement(
                   'button',
                   {
@@ -640,15 +757,9 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
                       setTesting(true);
                       setTestResult(null);
                       try {
-                        setTestResult(
-                          await api.testSettings({
-                            baseUrl: settings.baseUrl,
-                            apiKey: settings.apiKey,
-                            model: settings.model,
-                          }),
-                        );
+                        setTestResult({ id: 'draft', ...(await api.testSettings(draft)) });
                       } catch (e) {
-                        setTestResult({ ok: false, error: e instanceof Error ? e.message : String(e) });
+                        setTestResult({ id: 'draft', ok: false, error: e instanceof Error ? e.message : String(e) });
                       } finally {
                         setTesting(false);
                       }
@@ -656,22 +767,51 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
                   },
                   testing ? '测试中…' : '测试连接',
                 ),
+                React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => setDraft(null) }, '取消'),
+                React.createElement(
+                  'button',
+                  {
+                    className: 'pd-btn pd-btn-sm pd-btn-primary',
+                    onClick: () => {
+                      const created = {
+                        id: `m-${Date.now().toString(36)}`,
+                        name: draft.name.trim() || draft.model.trim() || '未命名模型',
+                        baseUrl: draft.baseUrl.trim(),
+                        apiKey: draft.apiKey.trim(),
+                        model: draft.model.trim(),
+                      };
+                      patch({ models: [...models, created], activeModelId: settings.activeModelId ?? created.id });
+                      setDraft(null);
+                      setTestResult(null);
+                    },
+                  },
+                  '保存模型',
+                ),
               ),
             )
-          : React.createElement('div', { className: 'pd-hint' }, '用 DSH 里已选好的模型；下面填了自定义接口才会覆盖它。'),
-        testResult
+          : React.createElement(
+              'button',
+              { className: 'pd-btn pd-btn-sm', onClick: () => setDraft({ name: '', baseUrl: '', apiKey: '', model: '' }) },
+              '＋ 添加模型',
+            ),
+        testResult && testResult.id === 'draft'
           ? React.createElement(
               'div',
               { className: `pd-test-result${testResult.ok ? ' is-ok' : ''}` },
-              testResult.ok
-                ? `连接正常 · ${testResult.ms}ms · 回复「${testResult.text ?? ''}」`
-                : `连接失败：${testResult.error}`,
+              testResult.ok ? `连通 · ${testResult.ms}ms · 「${testResult.text ?? ''}」` : `失败：${testResult.error}`,
+            )
+          : null,
+        testResult && testResult.id !== 'draft'
+          ? React.createElement(
+              'div',
+              { className: `pd-test-result${testResult.ok ? ' is-ok' : ''}` },
+              testResult.ok ? `连通 · ${testResult.ms}ms · 「${testResult.text ?? ''}」` : `失败：${testResult.error}`,
             )
           : null,
         React.createElement(
           'div',
           { className: 'pd-hint' },
-          '支持任何 OpenAI 兼容接口（OpenAI / Kimi / DeepSeek / 本地 Ollama / 中转站）。Key 以明文存在本机 $DSH_HOME/paper-desk/settings.json，界面里只显示打码后的样子。',
+          '勾选的模型会作为默认；会话栏的模型下拉里也能直接选。',
         ),
       );
 
@@ -683,7 +823,7 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
         React.createElement(
           'div',
           { className: 'pd-field' },
-          React.createElement('span', { className: 'pd-field-label' }, '角色设定（对所有对话生效）'),
+          React.createElement('span', { className: 'pd-field-label' }, '角色设定'),
           React.createElement('textarea', {
             className: 'pd-textarea',
             rows: 4,
@@ -692,29 +832,35 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
             onChange: (event) => patch({ persona: event.target.value }),
           }),
         ),
-        ...['chat', 'core', 'compare'].map((key) =>
-          React.createElement(
-            'div',
-            { className: 'pd-field', key },
-            React.createElement(
-              'span',
-              { className: 'pd-field-label' },
-              { chat: '逐块问答的补充要求', core: 'core 核的补充要求', compare: '对比讨论的补充要求' }[key],
-            ),
-            React.createElement('textarea', {
-              className: 'pd-textarea',
-              rows: 3,
-              placeholder: '留空则只用内置规则。内置规则（只用摘录、不许编数字、JSON 结构）不会被覆盖。',
-              value: settings.prompts?.[key] ?? '',
-              onChange: (event) => patch({ prompts: { ...(settings.prompts ?? {}), [key]: event.target.value } }),
-            }),
-          ),
-        ),
         React.createElement(
-          'div',
-          { className: 'pd-hint' },
-          '这些文字会追加在内置提示词后面，不会改变"只依据原文摘录回答、不许编造数字"这些硬约束。',
+          'button',
+          { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => setAdvanced((open) => !open) },
+          advanced ? '收起分场景设置' : '分场景设置（可选）',
         ),
+        advanced
+          ? React.createElement(
+              'div',
+              null,
+              ...['chat', 'core', 'compare'].map((key) =>
+                React.createElement(
+                  'div',
+                  { className: 'pd-field', key },
+                  React.createElement(
+                    'span',
+                    { className: 'pd-field-label' },
+                    { chat: '逐块问答', core: 'core 核', compare: '对比讨论' }[key],
+                  ),
+                  React.createElement('textarea', {
+                    className: 'pd-textarea',
+                    rows: 2,
+                    placeholder: '留空则只用默认规则',
+                    value: settings.prompts?.[key] ?? '',
+                    onChange: (event) => patch({ prompts: { ...(settings.prompts ?? {}), [key]: event.target.value } }),
+                  }),
+                ),
+              ),
+            )
+          : null,
       );
 
   return React.createElement(
@@ -725,22 +871,32 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
       width: 620,
       footer: [
         React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '关闭'),
-        React.createElement(
-          'button',
-          { key: 's', className: 'pd-btn pd-btn-primary', disabled: busy, onClick: save },
-          busy ? '保存中…' : '保存',
-        ),
+        React.createElement('button', { key: 's', className: 'pd-btn pd-btn-primary', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
       ],
     },
     React.createElement(
       'div',
       { className: 'pd-tabs pd-tabs-inset' },
       tabButton('dir', '数据目录'),
-      tabButton('api', '模型 API'),
+      tabButton('api', '模型'),
       tabButton('prompt', '提示词'),
     ),
     React.createElement('div', { className: 'pd-settings-body' }, tab === 'dir' ? dirPane : tab === 'api' ? apiPane : promptPane),
     error ? React.createElement('div', { className: 'pd-error' }, error) : null,
+    picking
+      ? React.createElement(Modal, {
+          title: '选择数据目录',
+          onClose: () => setPicking(false),
+          children: React.createElement(DirPicker, {
+            initial: value,
+            onCancel: () => setPicking(false),
+            onPick: (picked) => {
+              setValue(picked);
+              setPicking(false);
+            },
+          }),
+        })
+      : null,
   );
 }
 

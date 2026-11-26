@@ -174,6 +174,7 @@ export const api = {
       }
     }
   },
+  listDirs: (path) => request(`/fs/list?path=${encodeURIComponent(path ?? '')}`),
   getSettings: () => request('/settings'),
   saveSettings: (patch) => request('/settings', { method: 'POST', body: patch }),
   testSettings: (config) => request('/settings/test', { method: 'POST', body: config }),

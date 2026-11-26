@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getCachedSettings, readSettings, useCustomProvider } from './settings.js';
+import { getCachedSettings, readSettings, resolveCustomModel } from './settings.js';
 import { streamChat } from './openai.js';
 
 /**
@@ -55,7 +55,7 @@ function currentModel(ctx) {
  */
 export function llmReady(ctx) {
   // 自定义接口配好了就算就绪（不依赖 DSH 自己的模型选择）
-  if (useCustomProvider(getCachedSettings())) return true;
+  if (resolveCustomModel(getCachedSettings())) return true;
   const llm = ctx.get?.('llm');
   if (!llm || typeof llm.stream !== 'function') return false;
   try {
@@ -89,11 +89,12 @@ export async function complete(ctx, options) {
  * @returns {Promise<{ok:boolean, text?:string, error?:string}>}
  */
 export async function streamText(ctx, options, onEvent = () => {}) {
-  // 用户在插件设置里配了 OpenAI 兼容接口，就整条走它（不依赖 DSH 的模型选择）
+  // 用户添加了自定义模型（且在会话里选了它，或设成了默认），就整条走它
   const settings = await readSettings().catch(() => undefined);
-  if (settings && useCustomProvider(settings) && !options.ignoreCustomProvider) {
+  const custom = resolveCustomModel(settings, options.model);
+  if (custom && !options.ignoreCustomProvider) {
     return streamChat(
-      { baseUrl: settings.baseUrl, apiKey: settings.apiKey, model: settings.model },
+      { baseUrl: custom.baseUrl, apiKey: custom.apiKey, model: custom.model },
       {
         system: options.system,
         messages: options.messages,

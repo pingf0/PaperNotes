@@ -215,26 +215,32 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('流程图：两个问题的结论各自独立', byType('conclusion').length === 2);
 }
 
-// 插件设置：读写、打码、温度钳制、连通性测试
+// 插件设置：模型列表、打码、默认模型、目录浏览
 {
   const before = await json('/settings');
-  check('设置：默认走 DSH 模型', before.payload.provider === 'host', JSON.stringify(before.payload.provider));
+  check('设置：默认没有自定义模型', Array.isArray(before.payload.models) && before.payload.models.length === 0, JSON.stringify(before.payload.models));
   const saved = await json('/settings', {
     method: 'POST',
     body: {
-      provider: 'custom',
-      baseUrl: 'https://api.moonshot.cn/v1',
-      apiKey: 'sk-abcdefgh12345678',
-      model: 'moonshot-v1-32k',
+      models: [
+        { id: 'm-kimi', name: 'Kimi', baseUrl: 'https://api.moonshot.cn/v1', apiKey: 'sk-abcdefgh12345678', model: 'moonshot-v1-32k' },
+      ],
+      activeModelId: 'm-kimi',
       temperature: 5,
       persona: '你是严谨的导师',
       prompts: { chat: '先给结论' },
     },
   });
-  check('设置：Key 打码返回', /•/.test(saved.payload.apiKey) && !saved.payload.apiKey.includes('12345678'), saved.payload.apiKey);
+  const kimi = (saved.payload.models ?? [])[0];
+  check('设置：模型 Key 打码返回', /•/.test(kimi.apiKey) && !kimi.apiKey.includes('12345678'), kimi.apiKey);
   check('设置：温度被钳制到 1.5', saved.payload.temperature === 1.5, String(saved.payload.temperature));
-  const again = await json('/settings', { method: 'POST', body: { apiKey: saved.payload.apiKey, temperature: 0.7 } });
-  check('设置：被打码的 Key 不会被覆盖', again.payload.hasKey === true && again.payload.temperature === 0.7);
+  const again = await json('/settings', { method: 'POST', body: { models: [{ ...kimi }] } });
+  check('设置：被打码的 Key 不会被覆盖', again.payload.models[0].hasKey === true && /[•]/.test(again.payload.models[0].apiKey));
+  const models = await json('/models');
+  const custom = (models.payload.providers ?? []).find((provider) => provider.id === 'custom');
+  check('模型列表：自定义模型出现在会话可选项里', Boolean(custom && custom.models.some((item) => item.id === 'm-kimi')), JSON.stringify(custom));
+  const dirs = await json('/fs/list');
+  check('目录浏览：返回子目录与父目录', Array.isArray(dirs.payload.dirs) && typeof dirs.payload.path === 'string', dirs.payload.path);
   const bad = await json('/settings/test', { method: 'POST', body: { baseUrl: '', model: '' } });
   check('设置：测试连接缺参数时报错', bad.status === 400, JSON.stringify(bad.payload));
 }

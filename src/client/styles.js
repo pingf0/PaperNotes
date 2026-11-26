@@ -43,10 +43,13 @@ export const CSS = `
 }
 .pd-btn:hover { background: var(--dsw-alias-interactive-bg-hover, #f0f0f0); }
 .pd-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* 实心主按钮固定用中蓝 + 白字：深色模式下 brand-primary 常是浅蓝，
+   白字压上去就糊成一片（用户反馈"导入论文"看不清）。 */
 .pd-btn-primary {
-  background: var(--dsw-alias-brand-primary, #2f6fd0); border-color: transparent; color: #fff;
+  background: #2f6fd0; border-color: transparent; color: #fff;
 }
-.pd-btn-primary:hover { filter: brightness(1.06); background: var(--dsw-alias-brand-primary, #2f6fd0); }
+.pd-btn-primary:hover { background: #3b7ddd; }
+.pd-btn-primary:disabled { background: #2f6fd0; color: #fff; }
 .pd-btn-ghost { border-color: transparent; background: transparent; }
 .pd-btn-ghost:hover { background: var(--dsw-alias-interactive-bg-hover, #f0f0f0); }
 .pd-btn-sm { height: 24px; padding: 0 8px; font-size: 11px; border-radius: 6px; }
@@ -331,7 +334,7 @@ export const CSS = `
 .pd-send {
   width: 26px; height: 26px; flex: none; border: 0; border-radius: 50%; padding: 0;
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-  background: var(--dsw-alias-brand-primary, #2f6fd0); color: #fff;
+  background: #2f6fd0; color: #fff;
 }
 .pd-send:hover:not(:disabled) { filter: brightness(1.08); }
 .pd-send:disabled { opacity: .4; cursor: not-allowed; }
@@ -398,6 +401,36 @@ export const CSS = `
 
 .pd-tabs-inset { padding: 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l1, #eee); }
 .pd-settings-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 62vh; }
+.pd-row { display: flex; align-items: center; gap: 8px; }
+.pd-row-end { justify-content: flex-end; }
+.pd-model-row {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin-bottom: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, #dcdcdc); border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2, #fff);
+}
+.pd-model-main { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
+.pd-model-name { font-size: 12px; font-weight: 600; }
+.pd-model-sub {
+  font-size: 11px; color: var(--dsw-alias-label-tertiary, #9a9a9a); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pd-model-actions { display: flex; gap: 4px; flex: none; }
+.pd-model-draft {
+  border: 1px dashed var(--dsw-alias-border-l4, #c2ccd9); border-radius: 10px; padding: 10px; margin: 8px 0;
+}
+.pd-dir-picker { display: flex; flex-direction: column; gap: 8px; }
+.pd-dir-path {
+  font-size: 11.5px; padding: 6px 8px; border-radius: 6px; background: var(--dsw-alias-bg-layer-1, #f6f7f9);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pd-dir-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.pd-dir-item {
+  text-align: left; border: 0; background: transparent; border-radius: 6px; padding: 6px 8px;
+  font: inherit; font-size: 12px; cursor: pointer; color: var(--dsw-alias-label-primary, #222);
+}
+.pd-dir-item:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.05)); }
+.pd-dir-item.is-parent { color: var(--dsw-alias-label-secondary, #666); }
+.pd-dir-foot { display: flex; justify-content: flex-end; gap: 8px; }
 .pd-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pd-settings-grid .pd-field:first-child { grid-column: 1 / -1; }
 .pd-range { width: 100%; accent-color: var(--dsw-alias-brand-primary, #2f6fd0); }

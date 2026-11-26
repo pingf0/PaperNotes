@@ -9,7 +9,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   askAboutBlock,
@@ -226,15 +227,17 @@ export function createServer(ctx, prefix) {
           }
           providers.push({ id: provider.id, name: provider.name ?? provider.id, models });
         }
-        // 自定义接口：把它当成一个 provider 列出来，界面上就能选到
+        // 用户自己加的模型：当成一个 provider 列出来，会话里就能选到
         const settings = await readSettings();
-        if (settings.provider === 'custom' && settings.model) {
+        const customModels = settings.models ?? [];
+        if (customModels.length > 0) {
           providers.unshift({
             id: 'custom',
-            name: '自定义接口',
-            models: [{ id: settings.model, name: settings.model }],
+            name: '自定义模型',
+            models: customModels.map((item) => ({ id: item.id, name: item.name })),
           });
-          current = { provider: 'custom', model: settings.model };
+          const active = customModels.find((item) => item.id === settings.activeModelId);
+          if (active) current = { provider: 'custom', model: active.id };
         }
         return sendJson(res, 200, { current, providers });
       }
@@ -458,6 +461,28 @@ export function createServer(ctx, prefix) {
         return sendJson(res, 200, { id, categoryId: doc.categoryId, title: doc.title });
       }
 
+      if (path === '/fs/list' && method === 'GET') {
+        // 只读的目录浏览：给"选择数据目录"用，不提供任何写操作
+        const target = String(query.get('path') ?? '').trim();
+        const start = target.length > 0 ? resolve(target) : homedir();
+        if (start.length === 0) return sendJson(res, 400, { error: '路径无效' });
+        try {
+          const entries = await readdir(start, { withFileTypes: true });
+          const dirs = entries
+            .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+            .map((entry) => entry.name)
+            .sort((a, b) => a.localeCompare(b));
+          const parent = dirname(start);
+          return sendJson(res, 200, {
+            path: start,
+            parent: parent === start ? '' : parent,
+            dirs,
+          });
+        } catch (error) {
+          return sendJson(res, 400, { error: `读不了这个目录：${error instanceof Error ? error.message : String(error)}` });
+        }
+      }
+
       if (path === '/settings' && method === 'GET') {
         return sendJson(res, 200, maskSettings(await readSettings()));
       }
@@ -472,11 +497,12 @@ export function createServer(ctx, prefix) {
         // 连通性测试：只试用户填的这套配置，不影响当前设置
         const body = JSON.parse(await readBody(req));
         const current = await readSettings();
-        const apiKey = /[•]/.test(String(body.apiKey ?? '')) ? current.apiKey : String(body.apiKey ?? '');
+        const known = (current.models ?? []).find((item) => item.id === body.id);
+        const apiKey = /[•]/.test(String(body.apiKey ?? '')) ? known?.apiKey ?? '' : String(body.apiKey ?? '');
         const config = {
-          baseUrl: String(body.baseUrl ?? current.baseUrl ?? '').trim(),
+          baseUrl: String(body.baseUrl ?? '').trim(),
           apiKey,
-          model: String(body.model ?? current.model ?? '').trim(),
+          model: String(body.model ?? '').trim(),
         };
         if (config.baseUrl.length === 0 || config.model.length === 0) {
           return sendJson(res, 400, { ok: false, error: '先填 baseUrl 和模型名' });
