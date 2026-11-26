@@ -446,7 +446,11 @@ export async function reanalyzePaper(ctx, doc) {
     });
     if (repair.ok) parsed = parseJsonReply(repair.text);
   }
-  if (!parsed || typeof parsed !== 'object') throw new Error('模型返回的不是合法 JSON，请重试');
+  if (!parsed || typeof parsed !== 'object') {
+    // 把开头的原文带出来：不然用户只看到"不是合法 JSON"，我也无从判断是截断还是格式问题
+    const preview = String(result.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    throw new Error(`模型返回的不是合法 JSON（开头：${preview || '空'}）。可以再试一次，或换一个模型。`);
+  }
   const built = buildBlocks(parsed, figures, String(doc.title ?? '未命名论文'));
   return { blocks: built.blocks, edges: built.edges, title: built.title, abstract: built.abstract };
 }
