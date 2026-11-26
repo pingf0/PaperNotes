@@ -542,6 +542,28 @@ if ((await page.getByRole('button', { name: /框选中/ }).count()) === 0) error
 await page.mouse.move(pageBox.x + 20, pageBox.y + 20);
 await page.mouse.down();
 await page.mouse.move(pageBox.x + pageBox.width * 0.8, pageBox.y + pageBox.height * 0.7, { steps: 12 });
+await page.waitForTimeout(120);
+// 拖动中的选框必须真的可见：PDF 页面是白底，边框跟白底对比度 ≥ 3:1 才算"看得出来"
+if ((await page.locator('.pd-pdf-box').count()) !== 1) errors.push('拖动时没有出现选框');
+const boxPaint = await page
+  .locator('.pd-pdf-box')
+  .first()
+  .evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { border: style.borderTopColor, fill: style.backgroundColor };
+  })
+  .catch(() => ({ border: '', fill: '' }));
+const luminance = (color) => {
+  const rgb = String(color).match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [255, 255, 255];
+  const channel = (value) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+};
+const boxContrast = 1.05 / (luminance(boxPaint.border) + 0.05);
+if (!(boxContrast >= 3)) errors.push(`框选框和白页面对比度太低：${boxPaint.border}（${boxContrast.toFixed(2)}:1）`);
+await shot('04a2-lasso-box');
 await page.mouse.up();
 await page.waitForTimeout(1200);
 // 框选出来的图必须是高清的（按 PDF 坐标重渲染，而不是从屏幕画布上裁）

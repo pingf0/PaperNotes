@@ -742,10 +742,14 @@ l0,-`+(t+144)+`c-2,-159.3,-10,-310.7,-24,-454c-53.3,-528,-210,-949.7,
 .pd-pdf-canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
 .pd-pdf-page.is-picking { cursor: crosshair; }
 .pd-pdf-page.is-picking .pd-pdf-canvas { pointer-events: none; }
+/* \u6846\u9009\u6846\uFF1APDF \u9875\u9762\u6C38\u8FDC\u662F\u767D\u5E95\uFF0C\u6240\u4EE5\u56FA\u5B9A\u7528\u9AD8\u5BF9\u6BD4\u7684\u84DD\uFF0C\u4E0D\u8DDF\u4E3B\u9898\u8D70
+   \uFF08\u6DF1\u8272\u4E3B\u9898\u91CC --dsw-alias-brand-primary \u504F\u767D\uFF0C\u865A\u7EBF\u5728\u767D\u9875\u4E0A\u7B49\u4E8E\u770B\u4E0D\u89C1\uFF09\u3002
+   \u5916\u9762\u518D\u538B\u4E00\u5708\u534A\u900F\u660E\u767D\u6655\uFF0C\u843D\u5728\u6DF1\u8272\u63D2\u56FE\u4E0A\u4E5F\u62CE\u5F97\u51FA\u6765\u3002 */
 .pd-pdf-box {
-  position: absolute; border: 1px dashed var(--dsw-alias-brand-primary, #2f6fd0);
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #2f6fd0) 12%, transparent);
-  pointer-events: none;
+  position: absolute; border: 1.5px dashed #1f5fd0; border-radius: 2px;
+  background: rgba(31, 95, 208, .16);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .9), 0 0 16px rgba(31, 95, 208, .45);
+  pointer-events: none; z-index: 2;
 }
 
 .pd-lightbox { position: fixed; inset: 0; z-index: 95; background: rgba(8,14,24,.82); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }

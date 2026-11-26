@@ -491,10 +491,14 @@ export const CSS = `
 .pd-pdf-canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
 .pd-pdf-page.is-picking { cursor: crosshair; }
 .pd-pdf-page.is-picking .pd-pdf-canvas { pointer-events: none; }
+/* 框选框：PDF 页面永远是白底，所以固定用高对比的蓝，不跟主题走
+   （深色主题里 --dsw-alias-brand-primary 偏白，虚线在白页上等于看不见）。
+   外面再压一圈半透明白晕，落在深色插图上也拎得出来。 */
 .pd-pdf-box {
-  position: absolute; border: 1px dashed var(--dsw-alias-brand-primary, #2f6fd0);
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #2f6fd0) 12%, transparent);
-  pointer-events: none;
+  position: absolute; border: 1.5px dashed #1f5fd0; border-radius: 2px;
+  background: rgba(31, 95, 208, .16);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .9), 0 0 16px rgba(31, 95, 208, .45);
+  pointer-events: none; z-index: 2;
 }
 
 .pd-lightbox { position: fixed; inset: 0; z-index: 95; background: rgba(8,14,24,.82); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
