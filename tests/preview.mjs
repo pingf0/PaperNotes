@@ -493,6 +493,22 @@ if (JSON.stringify(beforeTidy) === JSON.stringify(afterTidy)) errors.push('整�
 const xs = afterTidy.map(([x]) => x);
 if (Math.max(...xs) - Math.min(...xs) < 300) errors.push('整理布局后节点没有横向铺开');
 if ((await page.locator('.pd-notice').count()) === 0) errors.push('整理布局后没有出现撤销提示');
+// 自动/手动整理之后，节点之间不能有重叠（宽节点、图片加载后变高都容易顶到一起）
+const overlaps = await page.evaluate(() => {
+  const rects = [...document.querySelectorAll('.pd-node')].map((el) => el.getBoundingClientRect());
+  const hits = [];
+  for (let i = 0; i < rects.length; i += 1) {
+    for (let j = i + 1; j < rects.length; j += 1) {
+      const a = rects[i];
+      const b = rects[j];
+      const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (w > 2 && h > 2) hits.push({ i, j, w: Math.round(w), h: Math.round(h) });
+    }
+  }
+  return hits;
+});
+if (overlaps.length > 0) errors.push('整理布局后节点重叠：' + JSON.stringify(overlaps).slice(0, 140));
 // 重新分析：没有模型时应给出可见失败提示（不是静默）
 page.on('dialog', (dialog) => dialog.accept());
 await page.getByRole('button', { name: '重新分析' }).click();

@@ -106,37 +106,53 @@ function flowLayout(blocks, edges, metrics) {
     const column = depth.get(block.id) ?? 0;
     columns.set(column, [...(columns.get(column) ?? []), block]);
   }
-  const COL_W = 380;
-  const ROW_GAP = 36;
+  /** 相邻两列之间的水平间距。 */
+  const COL_GAP = 44;
+  /** 同列上下两个节点之间的间距（留够，图片加载/公式换行后不再顶到一起）。 */
+  const ROW_GAP = 44;
   /** 一条横带最多几列：步骤链很长时折到下一行，不会拉成 5000px 的一条直线。 */
   const MAX_COLS = 6;
   /** 横带之间的竖向间隔。 */
-  const BAND_GAP = 90;
+  const BAND_GAP = 100;
   const placed = [];
+
+  /** 节点实际尺寸：实测优先，其次存的宽高，最后按"有没有图"估一个。 */
+  const widthOf = (block) => Math.max(metrics[block.id]?.w ?? 0, block.w ?? 0, 260);
+  const heightOf = (block) =>
+    Math.max(metrics[block.id]?.h ?? 0, block.h ?? 0, block.figureId ? 360 : 200);
 
   const columnKeys = [...columns.keys()].sort((a, b) => a - b);
   const bandCount = Math.ceil(columnKeys.length / MAX_COLS);
   let bandTop = 32;
   for (let band = 0; band < bandCount; band += 1) {
     const bandColumns = columnKeys.slice(band * MAX_COLS, (band + 1) * MAX_COLS);
+    // 每一列按自己最宽的那个节点定宽 —— 公式（380）、带图（340）、被拉宽过的节点都不会压到下一列
+    const sizes = bandColumns.map((column) => {
+      const list = columns.get(column);
+      return {
+        column,
+        width: Math.max(...list.map(widthOf)),
+        height: list.reduce((sum, block) => sum + heightOf(block) + ROW_GAP, 0) - ROW_GAP,
+      };
+    });
+    const bandWidth = sizes.reduce((sum, size) => sum + size.width, 0) + COL_GAP * (sizes.length - 1);
     let bandHeight = 0;
-    const positions = [];
-    bandColumns.forEach((column, localIndex) => {
-      // 奇数带反向排（蛇形）：上一带最后一列在右边，这一带的第一列也贴右边，连线只是一小段竖线
-      const visualCol = band % 2 === 1 ? MAX_COLS - 1 - localIndex : localIndex;
+    // 正向带从左往右排；反向带（蛇形）从右往左排，拐弯处只差一小段竖线
+    let cursor = band % 2 === 1 ? 40 + bandWidth : 40;
+    sizes.forEach((size) => {
+      const x = band % 2 === 1 ? cursor - size.width : cursor;
       let y = bandTop;
       const sorted = columns
-        .get(column)
+        .get(size.column)
         .slice()
         .sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
       for (const block of sorted) {
-        const size = metrics[block.id] ?? { w: block.w ?? 300, h: block.figureId ? 360 : 220 };
-        positions.push({ block, x: 40 + visualCol * COL_W, y });
-        y += size.h + ROW_GAP;
+        placed.push({ ...block, x: Math.round(x), y: Math.round(y) });
+        y += heightOf(block) + ROW_GAP;
       }
-      bandHeight = Math.max(bandHeight, y - bandTop);
+      bandHeight = Math.max(bandHeight, y - bandTop - ROW_GAP);
+      cursor += band % 2 === 1 ? -(size.width + COL_GAP) : size.width + COL_GAP;
     });
-    for (const item of positions) placed.push({ ...item.block, x: item.x, y: item.y });
     bandTop += bandHeight + BAND_GAP;
   }
   return placed;
@@ -185,6 +201,9 @@ export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAut
     persistView();
   };
   const [metrics, setMetrics] = useState({});
+  /** 自动排版要用"最新的"实测尺寸（effect 闭包里的 metrics 可能已经过期）。 */
+  const metricsRef = useRef(metrics);
+  metricsRef.current = metrics;
   /** 导入兜底的警告条是否已被用户关掉。 */
   const [warningDismissed, setWarningDismissed] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -288,6 +307,8 @@ export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAut
       const fresh = await api.getPaper(paperId);
       paperRef.current = fresh.paper;
       setPaper(fresh.paper);
+      // 新节点沿用了旧 id（b-step-1 …），实测尺寸必须清掉，否则自动排版会用上一版的高度
+      setMetrics({});
       setSelectedBlock(null);
       setWarningDismissed(false);
       // 新的思路链出来了：自动排一次版
@@ -478,8 +499,23 @@ export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAut
     // 等所有节点都量过尺寸（拿真实高度排版，不然图高的节点会叠在一起）
     if (Object.keys(metrics).length < blocks.length) return undefined;
     // 再等一拍：图片、公式刚挂上去时高度还会变
-    const timer = window.setTimeout(() => {
-      const next = flowLayout(blocks, paper.edges ?? [], metrics);
+    const timer = window.setTimeout(async () => {
+      // 图片可能还在解码：等它们加载完再量一次，别按"没有图"的高度排版（那样下一张图会顶上来）
+      const images = [...(canvasRef.current?.querySelectorAll('.pd-node img') ?? [])];
+      await Promise.all(
+        images.map(
+          (img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise((resolve) => {
+                  img.addEventListener('load', resolve, { once: true });
+                  img.addEventListener('error', resolve, { once: true });
+                }),
+        ),
+      );
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      const latestBlocks = paperRef.current?.blocks ?? blocks;
+      const next = flowLayout(latestBlocks, paperRef.current?.edges ?? edges, metricsRef.current);
       update({ blocks: next }, true);
       fitBounds(boundsOf(next), { maxZoom: 1 });
       autoFitted.current = true;
