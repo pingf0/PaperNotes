@@ -215,6 +215,36 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('流程图：两个问题的结论各自独立', byType('conclusion').length === 2);
 }
 
+// 重新分析：模型不可用时要回 502（前端会显示原因），而不是 500 或挂死
+{
+  const res = await json('/paper/reanalyze', { method: 'POST', body: { id: doc.id } });
+  check('重新分析：没有模型时回 502 并说明原因', res.status === 502 && String(res.payload.error ?? '').length > 0, String(res.payload.error ?? '').slice(0, 60));
+}
+
+// 笔记/会话迁移：按标题优先、再按同类型序号，迁不动就降级成整篇
+{
+  const { migrateAnnotations } = await import('../src/host/import.js');
+  const migrated = migrateAnnotations(
+    [
+      { id: 'old-p', title: '核心原理', type: 'principle' },
+      { id: 'old-r', title: '结果 1', type: 'result' },
+      { id: 'old-x', title: '手写节点', type: 'custom' },
+    ],
+    [
+      { id: 'new-p', title: '核心原理', type: 'principle' },
+      { id: 'new-q', title: '研究问题 1', type: 'question' },
+    ],
+    [
+      { id: 'n1', blockId: 'old-p', text: '标题能对上' },
+      { id: 'n2', blockId: 'old-x', text: '对不上就降级' },
+    ],
+    [{ blockId: 'old-r', messages: [] }],
+  );
+  check('迁移：标题能对上的笔记留在原节点', migrated.notes[0].blockId === 'new-p', JSON.stringify(migrated.notes[0]));
+  check('迁移：对不上的笔记降级为整篇', migrated.notes[1].blockId === undefined, JSON.stringify(migrated.notes[1]));
+  check('迁移：找不到对应节点的会话降级为整篇', migrated.chats[0].blockId === null, JSON.stringify(migrated.chats[0]));
+}
+
 // 重新裁图：替换 figures、保持节点 figureId 可解析、清掉不再引用的旧文件
 const recrop = await json('/paper/figures', {
   method: 'POST',

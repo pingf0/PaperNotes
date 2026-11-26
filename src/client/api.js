@@ -174,6 +174,7 @@ export const api = {
       }
     }
   },
+  reanalyze: (id) => request('/paper/reanalyze', { method: 'POST', body: { id } }),
   replaceFigures: (id, figures) => request('/paper/figures', { method: 'POST', body: { id, figures } }),
   uploadFigure: (id, dataUrl, caption) => request('/paper/figure', { method: 'POST', body: { id, dataUrl, caption } }),
   openPdfExternally: (id) => request('/paper/open-pdf', { method: 'POST', body: { id } }),

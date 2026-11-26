@@ -211,6 +211,23 @@ export function buildBlocks(draft, figures, fallbackTitle) {
   edges.push({ from: backgroundText.length > 0 ? backgroundId : motivationId, to: principleId });
 
   const questions = Array.isArray(draft.questions) ? draft.questions.slice(0, 4) : [];
+  // 模型偷懒不写 questions 时，用结果/现象倒推成"问题链"：至少保证图是从左到右的因果链，
+  // 而不是一堆从原理节点射出去的线（用户反馈的"刺猬图"）。
+  const hasSteps = Array.isArray(draft.steps) && draft.steps.length > 0;
+  if (questions.length === 0 && !hasSteps) {
+    const deriveFrom = [
+      ...(Array.isArray(draft.results) ? draft.results : []).map((item) => ({ title: item?.title, text: item?.text, figureIndex: item?.figureIndex })),
+      ...(Array.isArray(draft.phenomena) ? draft.phenomena : []).map((item) => ({ title: item?.title, text: item?.text, figureIndex: item?.figureIndex })),
+    ].filter((item) => String(item.text ?? '').trim().length > 0);
+    for (const item of deriveFrom.slice(0, 3)) {
+      questions.push({
+        question: String(item.title ?? '').trim() || `研究点 ${questions.length + 1}`,
+        principle: String(draft.principle?.summary ?? '').slice(0, 600),
+        experiments: [{ name: String(item.title ?? '').trim() || '实验/观测', text: item.text, figureIndex: item.figureIndex }],
+        conclusion: String(draft.conclusion ?? '').trim() || String(item.text ?? '').slice(0, 200),
+      });
+    }
+  }
   if (questions.length > 0) {
     // 一个子问题一行：问题 → 方法 → 实验 → 结论，横向排开，像流程图一样读
     const COL_Q = COL_TEXT + 720;
@@ -384,6 +401,93 @@ export function buildBlocks(draft, figures, fallbackTitle) {
  * @param payload { title?, pages, figures, pdfBase64? }
  * @returns { paper, warning? }
  */
+/**
+ * 把已有论文重新分析一遍：用存下来的全文 + 图注再跑一次 LLM，产出新的节点与连线。
+ * 只换结构，不动 figures / 笔记 / 会话（迁移由 migrateAnnotations 负责）。
+ *
+ * @param ctx 宿主上下文
+ * @param doc 已有的 paper 记录（需要 doc.text）
+ * @returns {Promise<{blocks:Array, edges:Array, title:string, abstract:string, warning?:string}>}
+ */
+export async function reanalyzePaper(ctx, doc) {
+  const text = String(doc.text ?? '');
+  if (text.trim().length < 400) throw new Error('这篇没有保存正文，无法重新分析');
+  const pages = [{ page: 1, text }];
+  const figures = (doc.figures ?? []).map((figure, index) => ({ ...figure, id: figure.id ?? `f-${index + 1}` }));
+  const digest = digestText(pages);
+  const captions = captionList(figures);
+  const { system, user } = buildPrompt({ title: doc.title }, digest, captions);
+  const result = await complete(ctx, {
+    system,
+    messages: [{ role: 'user', content: user }],
+    temperature: 0.2,
+    timeoutMs: 180_000,
+  });
+  if (!result.ok) throw new Error(`模型分析失败：${result.error}`);
+  const parsed = parseJsonReply(result.text);
+  if (!parsed || typeof parsed !== 'object') throw new Error('模型返回的不是合法 JSON，请重试');
+  const built = buildBlocks(parsed, figures, String(doc.title ?? '未命名论文'));
+  return { blocks: built.blocks, edges: built.edges, title: built.title, abstract: built.abstract };
+}
+
+/** 归一化标题，用于把旧节点和新节点对上。 */
+function normalizeTitle(title) {
+  return String(title ?? '')
+    .replace(/\s+/g, '')
+    .replace(/[：:·,，.。()（）[\]【】]/g, '')
+    .toLowerCase();
+}
+
+/**
+ * 重新分析时把旧的笔记 / 会话迁到新节点上。
+ *
+ * 顺序：先按标题精确匹配 → 再按同类型同序号的节点 → 都不行就挂到"整篇"（blockId = null），
+ * 宁可变成整篇笔记，也不要把用户写的东西丢掉。
+ *
+ * @param {Array} oldBlocks 旧节点
+ * @param {Array} newBlocks 新节点
+ * @param {Array} notes 旧笔记
+ * @param {Array} chats 旧会话
+ * @returns {{notes:Array, chats:Array, movedNotes:number, movedChats:number}}
+ */
+export function migrateAnnotations(oldBlocks, newBlocks, notes, chats) {
+  const byTitle = new Map();
+  for (const block of newBlocks) byTitle.set(normalizeTitle(block.title), block);
+  const byType = new Map();
+  for (const block of newBlocks) byType.set(block.type, [...(byType.get(block.type) ?? []), block]);
+  const sameTypeIndex = new Map();
+  for (const block of oldBlocks) {
+    const list = byType.get(block.type) ?? [];
+    const index = sameTypeIndex.get(block.type) ?? 0;
+    sameTypeIndex.set(block.type, index + 1);
+    if (list[index]) sameTypeIndex.set(`map:${block.id}`, list[index].id);
+  }
+  /** 旧 id → 新 id（可能没有）。 */
+  const remap = (oldId) => {
+    const old = oldBlocks.find((block) => block.id === oldId);
+    if (!old) return null;
+    const byName = byTitle.get(normalizeTitle(old.title));
+    if (byName) return byName.id;
+    return sameTypeIndex.get(`map:${oldId}`) ?? null;
+  };
+
+  let movedNotes = 0;
+  const nextNotes = (Array.isArray(notes) ? notes : []).map((note) => {
+    if (!note.blockId) return note;
+    const next = remap(note.blockId);
+    movedNotes += 1;
+    return { ...note, blockId: next ?? undefined };
+  });
+  let movedChats = 0;
+  const nextChats = (Array.isArray(chats) ? chats : []).map((chat) => {
+    if (!chat.blockId) return chat;
+    const next = remap(chat.blockId);
+    movedChats += 1;
+    return next ? { ...chat, blockId: next } : { ...chat, blockId: null };
+  });
+  return { notes: nextNotes, chats: nextChats, movedNotes, movedChats };
+}
+
 export async function structurePaper(ctx, payload) {
   const pages = Array.isArray(payload.pages) ? payload.pages : [];
   const figures = Array.isArray(payload.figures) ? payload.figures.map((f, i) => ({ ...f, id: `f-${i + 1}` })) : [];

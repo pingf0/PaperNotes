@@ -246,6 +246,36 @@ export function PaperView({ paperId, onClose, onChanged }) {
   };
 
   /** 把当前视图（平移 + 缩放）落盘。 */
+  /** 重新分析：用已存的全文重跑结构化，换节点但把笔记与会话迁过去。 */
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const reanalyze = async () => {
+    if (reanalyzing) return;
+    if (
+      !window.confirm(
+        '用已存的全文重新拆一遍节点？\n笔记和会话会按标题迁到新节点上；手动加的节点和它们的连线会被清掉。',
+      )
+    ) {
+      return;
+    }
+    setReanalyzing(true);
+    setRecropNote(null);
+    try {
+      const result = await api.reanalyze(paperId);
+      const fresh = await api.getPaper(paperId);
+      paperRef.current = fresh.paper;
+      setPaper(fresh.paper);
+      setSelectedBlock(null);
+      setRecropNote({
+        ok: true,
+        text: `已重新分析：${result.blocks} 个节点，迁移 ${result.movedNotes ?? 0} 条笔记、${result.movedChats ?? 0} 段会话`,
+      });
+    } catch (e) {
+      setRecropNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setReanalyzing(false);
+    }
+  };
+
   /** 重新裁图：读已存的 source.pdf，用当前算法重跑一遍，只替换图片。 */
   const [recropping, setRecropping] = useState(null);
   /** 换图后 +1，让 <img> 的 URL 变化（否则浏览器会复用旧的位图，看起来"重新裁图没效果"）。 */
@@ -681,6 +711,17 @@ export function PaperView({ paperId, onClose, onChanged }) {
       }, '聚焦所选'),
     ),
     React.createElement('button', { className: 'pd-btn pd-btn-ghost', onClick: addNode, title: '在画布上加一个自由节点' }, React.createElement(Icon, { name: 'plus' }), '节点'),
+    React.createElement(
+      'button',
+      {
+        className: 'pd-btn pd-btn-ghost',
+        onClick: reanalyze,
+        disabled: reanalyzing,
+        title: '用已存的全文重新拆一遍节点（笔记与会话会迁移过去）',
+      },
+      React.createElement(Icon, { name: 'spark', size: 12 }),
+      reanalyzing ? '分析中…' : '重新分析',
+    ),
     React.createElement(
       'button',
       {

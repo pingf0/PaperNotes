@@ -19,7 +19,7 @@ import {
   compareChatStream,
   condenseNote,
 } from './chat.js';
-import { structurePaper } from './import.js';
+import { reanalyzePaper, migrateAnnotations, structurePaper } from './import.js';
 import { llmReady } from './llm.js';
 import {
   dataDir,
@@ -444,6 +444,29 @@ export function createServer(ctx, prefix) {
         const index = await readIndex(dir);
         await writeIndex(dir, { ...index, papers: [...index.papers, summarize(doc)] });
         return sendJson(res, 200, { id, categoryId: doc.categoryId, title: doc.title });
+      }
+
+      if (path === '/paper/reanalyze' && method === 'POST') {
+        // 用已存的全文重跑一次结构化：换节点/连线，笔记与会话按标题/类型迁移过去
+        const body = JSON.parse(await readBody(req));
+        const doc = await readPaper(dir, body.id);
+        if (!doc) return sendJson(res, 404, { error: '论文不存在' });
+        const result = await reanalyzePaper(ctx, doc).catch((error) => ({ error }));
+        if (result.error) return sendJson(res, 502, { error: result.error.message ?? String(result.error) });
+        const migrated = migrateAnnotations(doc.blocks ?? [], result.blocks, doc.notes ?? [], doc.chats ?? []);
+        doc.blocks = result.blocks;
+        doc.edges = result.edges;
+        doc.notes = migrated.notes;
+        doc.chats = migrated.chats;
+        if (result.title) doc.title = result.title;
+        if (result.abstract) doc.abstract = result.abstract;
+        await writePaper(dir, body.id, doc);
+        return sendJson(res, 200, {
+          paper: summarize(doc),
+          blocks: doc.blocks.length,
+          movedNotes: migrated.movedNotes,
+          movedChats: migrated.movedChats,
+        });
       }
 
       if (path === '/paper/figures' && method === 'POST') {

@@ -272,7 +272,12 @@ page.on('pageerror', (error) => {
   console.log('PAGEERROR:', String(error).slice(0, 300), (error?.stack ?? '').split('\n').slice(1, 4).join(' | '));
 });
 page.on('console', (message) => {
-  if (message.type() === 'error') errors.push('console: ' + message.text());
+  if (message.type() !== 'error') return;
+  const text = message.text();
+  // 浏览器自己的"资源加载失败"会把预期内的 502/404 也当错误（例如没有模型时的重新分析），
+  // 真正的 JS 异常由 pageerror 兜住，这里只忽略这类网络提示。
+  if (/Failed to load resource/.test(text)) return;
+  errors.push('console: ' + text);
 });
 
 let themeTag = 'light';
@@ -435,12 +440,21 @@ if (JSON.stringify(beforeTidy) === JSON.stringify(afterTidy)) errors.push('整�
 const xs = afterTidy.map(([x]) => x);
 if (Math.max(...xs) - Math.min(...xs) < 300) errors.push('整理布局后节点没有横向铺开');
 if ((await page.locator('.pd-notice').count()) === 0) errors.push('整理布局后没有出现撤销提示');
+// 重新分析：没有模型时应给出可见失败提示（不是静默）
+page.on('dialog', (dialog) => dialog.accept());
+await page.getByRole('button', { name: '重新分析' }).click();
+await page.waitForTimeout(400);
+const notices = await page.locator('.pd-notice').allInnerTexts().catch(() => []);
+const reanalyzeNotice = notices.join(' | ');
+if (!/失败|无法|没有保存|模型/.test(reanalyzeNotice)) errors.push('重新分析失败时没有提示：' + reanalyzeNotice.slice(0, 60));
+await shot('04g-reanalyze');
 await shot('04f-tidy');
-const noticeText = await page.locator('.pd-notice').first().innerText().catch(() => '(无提示)');
-if (!noticeText.includes('撤销')) {
-  errors.push('整理布局后没有撤销入口：' + noticeText.slice(0, 60));
+const undoButton = page.locator('.pd-notice button', { hasText: '撤销' });
+if ((await undoButton.count()) === 0) {
+  const texts = await page.locator('.pd-notice').allInnerTexts().catch(() => []);
+  errors.push('整理布局后没有撤销入口：' + texts.join(' | ').slice(0, 60));
 } else {
-  await page.locator('.pd-notice button', { hasText: '撤销' }).first().click();
+  await undoButton.first().click();
 }
 await page.waitForTimeout(250);
 const undone = await page.evaluate(() =>
@@ -981,7 +995,6 @@ if (themeTag === 'light') {
   await page.waitForSelector('.pd-paper');
   await page.locator('.pd-paper').first().click();
   await page.waitForSelector('.pd-node');
-  page.on('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: /重新裁图/ }).click();
   await page
     .waitForFunction(
@@ -1012,7 +1025,9 @@ await page.close();
 page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (error) => errors.push('pageerror(dark): ' + String(error)));
 page.on('console', (message) => {
-  if (message.type() === 'error') errors.push('console(dark): ' + message.text());
+  if (message.type() !== 'error') return;
+  if (/Failed to load resource/.test(message.text())) return;
+  errors.push('console(dark): ' + message.text());
 });
 await runFlow();
 
