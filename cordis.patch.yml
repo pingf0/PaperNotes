@@ -1,0 +1,6 @@
+# 论文台的挂载声明：往配置树里插入一行 Host 插件。
+# 因为 package.json 里声明了 dsh.client，DSH 的模块系统会同时把本包扫描为浏览器插件，
+# 提供 /plugins/dsh-paper-desk/client.js 给页面。
+- insert:
+    - id: dsh-paper-desk
+      name: 'dsh-paper-desk'

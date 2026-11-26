@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Paper desk">
+  <defs>
+    <linearGradient id="pd-sheet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7fafd"/>
+      <stop offset="1" stop-color="#dbe7f3"/>
+    </linearGradient>
+  </defs>
+  <rect x="13" y="7" width="26" height="34" rx="3.5" fill="url(#pd-sheet)" stroke="#3b6f9e" stroke-width="1.6" transform="rotate(7 26 24)"/>
+  <rect x="9" y="6" width="26" height="34" rx="3.5" fill="#ffffff" stroke="#245c8a" stroke-width="1.8"/>
+  <g stroke="#9db6cc" stroke-width="1.5" stroke-linecap="round">
+    <path d="M14 13h16"/>
+    <path d="M14 17.5h11"/>
+  </g>
+  <g stroke="#245c8a" stroke-width="1.6" fill="none">
+    <path d="M16 27.5 22 23.5"/>
+    <path d="M22 23.5 29 30"/>
+  </g>
+  <circle cx="15" cy="28.5" r="3.1" fill="#2f7ec4"/>
+  <circle cx="22.5" cy="23" r="3.1" fill="#245c8a"/>
+  <rect x="26.2" y="27.4" width="6.6" height="5.6" rx="1.4" fill="#57b39b"/>
+</svg>

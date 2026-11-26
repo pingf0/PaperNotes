@@ -1,0 +1,63 @@
+{
+  "name": "dsh-paper-desk",
+  "version": "0.11.0",
+  "private": true,
+  "description": "PaperNotes：把读过的论文拆成可拖拽的思维节点，逐块提问、记笔记、凝练成读后整理，并支持多论文对比。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "dist/pdfjs.mjs",
+    "dist/pdf.worker.mjs",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node tests/smoke.mjs && node tests/client-bundle.mjs && node tests/tex-wrap.mjs && node tests/llm-empty.mjs",
+    "test:ui": "node tests/preview.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10",
+    "katex": "^0.16.47",
+    "pdfjs-dist": "^5.4.149",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": false,
+      "inject": []
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "paper",
+    "pdf",
+    "note-taking",
+    "llm",
+    "literature-review"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:pingf0/PaperNotes.git"
+  },
+  "homepage": "https://github.com/pingf0/PaperNotes#readme",
+  "author": "pingf0"
+}

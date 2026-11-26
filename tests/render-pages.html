@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8" /></head>
+<body>
+<pre id="log">rendering…</pre>
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const pages = (params.get('pages') ?? '1').split(',').map(Number);
+  const out = [];
+  try {
+    const pdfjs = await import('/dsh-paper-desk-4821/pdfjs.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = '/dsh-paper-desk-4821/worker';
+    const bytes = new Uint8Array(await (await fetch('/sample.pdf')).arrayBuffer());
+    const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
+    for (const number of pages) {
+      const page = await doc.getPage(number);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      out.push({ page: number, url: canvas.toDataURL('image/png') });
+    }
+    window.__out = out;
+  } catch (error) {
+    window.__out = { error: String(error) };
+  }
+  window.__done = true;
+</script>
+</body></html>

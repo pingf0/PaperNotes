@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>paper desk preview</title>
+    <!-- DSH 的真实主题变量（明暗两套都在这一份里，靠 body[data-ds-dark-theme] 切换） -->
+    <link rel="stylesheet" href="/theme.css" />
+    <style>
+      html, body { margin: 0; height: 100%; }
+      /* 复刻 AppFrame 的 .overlayLayer：整层穿透点击，直接子元素收回事件 */
+      #frame { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+      #frame > * { pointer-events: auto; }
+    </style>
+  </head>
+  <body>
+    <div id="frame"></div>
+    <script type="module">
+      if (new URLSearchParams(location.search).has('dark')) document.body.dataset.dsDarkTheme = '';
+      const { React, createRoot } = await import('/dev/react.mjs');
+      let captured;
+      window.__ModuleLoader__ = { load: (info) => { captured = info; } };
+      await import('/client.js');
+      const mod = captured.factory((name) => {
+        if (name === 'react') return React;
+        throw new Error('unexpected require: ' + name);
+      });
+      const registered = [];
+      mod.apply({
+        effect: (fn) => fn(),
+        slots: {
+          inject: (name, factory) => factory(),
+          register: (options, component) => { registered.push({ options, component }); return {}; },
+        },
+      });
+      const page = registered.find((entry) => entry.options && entry.options.name === 'main');
+      createRoot(document.getElementById('frame')).render(React.createElement(page.component, {}));
+      window.__ready = true;
+    </script>
+  </body>
+</html>

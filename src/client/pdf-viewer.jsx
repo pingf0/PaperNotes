@@ -1,0 +1,344 @@
+/**
+ * 右侧栏里的原文阅读器：连续上下滚动 + 缩放。
+ *
+ * 为什么不用系统自带的 PDF 查看器：桌面壳的渲染进程拿不到 file://（沙箱），
+ * Chromium 内置 PDF 插件在 Electron 里也不保证可用。所以仍用 pdf.js 画，
+ * 但把**渲染倍率**抬到显示尺寸的 2 倍，放大后依然清晰；另外给一个「用系统预览打开」的出口。
+ */
+import { React } from './runtime.js';
+import { api, pdfUrl } from './api.js';
+import { loadPdfjs, ensureWorker } from './pdf.js';
+import { Icon, Spinner } from './ui.jsx';
+
+/** 渲染倍率：显示尺寸的 2 倍，Retina 上不糊；上限防止超大页吃掉内存。 */
+const RENDER_RATIO = 2;
+/** 放大上限 / 下限（1 = 适应宽度）。 */
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 1.25;
+/** 视口前后多远开始渲染（像素）。 */
+const PRELOAD_MARGIN = '800px';
+
+/**
+ * 把缩放钳在允许范围内。
+ * @param {number} value
+ * @returns {number}
+ */
+function clampZoom(value) {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
+}
+
+/**
+ * 单页：占位 + 进入视口才渲染，离开就释放位图。
+ *
+ * 传了 onPickBox 时进入"框选"模式：按住拖出矩形，松开就把这一块裁成高清图交出去。
+ * @param {{ doc: object, index: number, ratio: number, width: number }} props
+ */
+function PdfPage({ doc, index, ratio, width, onPickBox }) {
+  const { useEffect, useRef, useState } = React;
+  const holderRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [visible, setVisible] = useState(false);
+  const [box, setBox] = useState(null);
+  const dragRef = useRef(null);
+
+  /**
+   * 把框选区域**重新按高分辨率渲染**出来。
+   *
+   * 不能直接从屏幕画布上裁：那张画布只有"显示宽度 × 2"，框 160px 宽的区域裁出来只有 320px，
+   * 糊得没法看。这里改为按 PDF 原始坐标重新渲染一块，倍率 3x（最大 2600px）。
+   * @param {{x:number,y:number,w:number,h:number}} rect 相对页面左上角的 CSS 像素
+   */
+  const commitBox = async (rect) => {
+    const holder = holderRef.current;
+    if (!holder || !rect || rect.w < 12 || rect.h < 12) return;
+    const displayedWidth = holder.getBoundingClientRect().width;
+    try {
+      const page = await doc.getPage(index + 1);
+      const base = page.getViewport({ scale: 1 });
+      // CSS 像素 → PDF 用户单位
+      const unit = base.width / displayedWidth;
+      const pdfX = rect.x * unit;
+      const pdfY = rect.y * unit;
+      const pdfW = Math.max(1, rect.w * unit);
+      const pdfH = Math.max(1, rect.h * unit);
+      const scale = Math.min(3, Math.max(1.5, 2600 / Math.max(pdfW, pdfH)));
+      const viewport = page.getViewport({ scale });
+      const crop = document.createElement('canvas');
+      crop.width = Math.round(pdfW * scale);
+      crop.height = Math.round(pdfH * scale);
+      const ctx = crop.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, crop.width, crop.height);
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+        // 把目标区域平移到画布左上角
+        transform: [1, 0, 0, 1, -pdfX * scale, -pdfY * scale],
+      }).promise;
+      onPickBox?.(crop.toDataURL('image/png'));
+    } catch (error) {
+      onPickBox?.(null, error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  useEffect(() => {
+    const holder = holderRef.current;
+    if (!holder || typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) setVisible(entry.isIntersecting);
+      },
+      { root: holder.closest('.pd-pdf-scroll'), rootMargin: `${PRELOAD_MARGIN} 0px` },
+    );
+    observer.observe(holder);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !doc || width === 0) return undefined;
+    if (!visible) {
+      canvas.width = 0;
+      canvas.height = 0;
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await doc.getPage(index + 1);
+        if (cancelled) return;
+        const base = page.getViewport({ scale: 1 });
+        // 显示宽度 × 2 倍像素，放大后仍然清晰；超过 2600px 就封顶
+        const target = Math.min(2600, width * RENDER_RATIO);
+        const viewport = page.getViewport({ scale: target / base.width });
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: context, viewport }).promise;
+      } catch {
+        /* 单页失败不影响其它页 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, index, visible, width]);
+
+  return React.createElement(
+    'div',
+    {
+      ref: holderRef,
+      className: `pd-pdf-page${onPickBox ? ' is-picking' : ''}`,
+      style: { width, height: Math.max(40, Math.round(width * ratio)) },
+      onMouseDown: (event) => {
+        if (!onPickBox || event.button !== 0) return;
+        event.preventDefault();
+        const holder = holderRef.current;
+        const bounds = holder.getBoundingClientRect();
+        const clamp = (value, max) => Math.min(Math.max(0, value), max);
+        const start = {
+          x: clamp(event.clientX - bounds.left, bounds.width),
+          y: clamp(event.clientY - bounds.top, bounds.height),
+        };
+        const current = { x: start.x, y: start.y, w: 0, h: 0 };
+        setBox(current);
+        // 监听挂在 window 上：拖出页面边界也不会中断（否则选框一出手就没了）
+        const onMove = (move) => {
+          const x = clamp(move.clientX - bounds.left, bounds.width);
+          const y = clamp(move.clientY - bounds.top, bounds.height);
+          Object.assign(current, {
+            x: Math.min(start.x, x),
+            y: Math.min(start.y, y),
+            w: Math.abs(x - start.x),
+            h: Math.abs(y - start.y),
+          });
+          setBox({ ...current });
+        };
+        const onUp = () => {
+          window.removeEventListener('mousemove', onMove);
+          setBox(null);
+          void commitBox({ ...current });
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp, { once: true });
+      },
+    },
+    React.createElement('canvas', { ref: canvasRef, className: 'pd-pdf-canvas' }),
+    box
+      ? React.createElement('div', {
+          className: 'pd-pdf-box',
+          style: { left: box.x, top: box.y, width: box.w, height: box.h },
+        })
+      : null,
+  );
+}
+
+/**
+ * 连续的 PDF 阅读面板（放在右侧栏里）。
+ * @param {{ paperId: string }} props
+ */
+export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking }) {
+  const { useEffect, useRef, useState } = React;
+  const [doc, setDoc] = useState(null);
+  const [count, setCount] = useState(0);
+  const [ratio, setRatio] = useState(1.294);
+  const [baseWidth, setBaseWidth] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(true);
+  const scrollRef = useRef(null);
+  const zoomRef = useRef(1);
+  const frameRef = useRef(0);
+
+  /** 载入 PDF。 */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const pdfjs = await loadPdfjs();
+        ensureWorker(pdfjs);
+        const response = await fetch(pdfUrl(paperId));
+        if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const loaded = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
+        const first = await loaded.getPage(1);
+        const viewport = first.getViewport({ scale: 1 });
+        if (!alive) return;
+        setDoc(loaded);
+        setCount(loaded.numPages);
+        setRatio(viewport.height / viewport.width);
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [paperId]);
+
+  /** 跟踪容器宽度（右侧栏可拖宽）。 */
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return undefined;
+    const measure = () => {
+      const next = Math.max(120, element.clientWidth - 24);
+      setBaseWidth((current) => (Math.abs(current - next) > 2 ? next : current));
+    };
+    measure();
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = requestAnimationFrame(measure);
+    });
+    observer.observe(element);
+    return () => {
+      cancelAnimationFrame(frameRef.current);
+      observer.disconnect();
+    };
+  }, []);
+
+  zoomRef.current = zoom;
+
+  /**
+   * 以指针位置为锚缩放：缩放前后指针下面的那一点保持不动。
+   * @param {number} nextZoom 目标缩放
+   * @param {{x:number,y:number}} [anchor] 视口内的锚点
+   */
+  const zoomAt = (nextZoom, anchor) => {
+    const element = scrollRef.current;
+    const clamped = clampZoom(nextZoom);
+    if (!element || Math.abs(clamped - zoomRef.current) < 0.001) return;
+    const rect = element.getBoundingClientRect();
+    const anchorX = anchor?.x ?? rect.width / 2;
+    const anchorY = anchor?.y ?? rect.height / 2;
+    const contentX = element.scrollLeft + anchorX;
+    const contentY = element.scrollTop + anchorY;
+    const factor = clamped / zoomRef.current;
+    zoomRef.current = clamped;
+    setZoom(clamped);
+    requestAnimationFrame(() => {
+      element.scrollLeft = contentX * factor - anchorX;
+      element.scrollTop = contentY * factor - anchorY;
+    });
+  };
+
+  /** Cmd/Ctrl + 滚轮或触控板捏合 → 以指针为锚缩放。 */
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return undefined;
+    const onWheel = (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const rect = element.getBoundingClientRect();
+      zoomAt(zoomRef.current * Math.exp(-event.deltaY * 0.0025), {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, []);
+
+  /** 交给系统默认阅读器（原生渲染，最清晰）。 */
+  const openExternally = async () => {
+    setNote('');
+    try {
+      await api.openPdfExternally(paperId);
+      setNote('已交给系统默认阅读器打开');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const contentWidth = Math.round(baseWidth * zoom);
+
+  return React.createElement(
+    'div',
+    { className: 'pd-pdf-wrap' },
+    React.createElement(
+      'div',
+      { className: 'pd-pdf-tools' },
+      React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => zoomAt(zoomRef.current / ZOOM_STEP), title: '缩小（Cmd/Ctrl + 滚轮也可以）' }, '−'),
+      React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost pd-zoom-value', onClick: () => zoomAt(1), title: '适应宽度' }, `${Math.round(zoom * 100)}%`),
+      React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => zoomAt(zoomRef.current * ZOOM_STEP), title: '放大' }, '+'),
+      React.createElement(
+        'button',
+        {
+          className: `pd-btn pd-btn-sm${picking ? ' pd-btn-primary' : ''}`,
+          onClick: onTogglePicking,
+          title: '在页面上拖一个矩形，把这一块裁下来挂到当前节点',
+        },
+        picking ? '框选中…' : '框选配图',
+      ),
+      React.createElement('div', { className: 'pd-grow' }),
+      React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: openExternally, title: '用系统默认阅读器打开（原生渲染，最清晰）' }, React.createElement(Icon, { name: 'open', size: 12 }), '系统预览'),
+    ),
+    note ? React.createElement('div', { className: 'pd-pdf-note' }, note) : null,
+    React.createElement(
+      'div',
+      { className: 'pd-pdf-scroll', ref: scrollRef },
+      loading
+        ? React.createElement('div', { className: 'pd-empty' }, React.createElement(Spinner), ' 正在读取原文…')
+        : error
+          ? React.createElement('div', { className: 'pd-empty' }, error)
+          : Array.from({ length: count }, (_unused, index) =>
+              React.createElement(PdfPage, {
+                key: index,
+                doc,
+                index,
+                ratio,
+                width: contentWidth,
+                onPickBox: picking ? onPickBox : undefined,
+              }),
+            ),
+    ),
+  );
+}

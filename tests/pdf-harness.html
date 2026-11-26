@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh">
+  <head><meta charset="utf-8" /><title>pdf harness</title></head>
+  <body>
+    <pre id="log">running…</pre>
+    <script type="module">
+      import { extractPaper } from '/client/pdf.js';
+      const log = (text) => {
+        document.getElementById('log').textContent += '\n' + text;
+      };
+      try {
+        const response = await fetch('/sample.pdf');
+        const blob = await response.blob();
+        const file = new File([blob], 'sample.pdf', { type: 'application/pdf' });
+        const result = await extractPaper(file, (progress) => {
+          if (progress.phase === 'read') log(`page ${progress.page}/${progress.total} figures=${progress.figures}`);
+        });
+        window.__out = {
+          pages: result.pages.length,
+          pageCount: result.pageCount,
+          textChars: result.pages.reduce((sum, page) => sum + page.text.length, 0),
+          pdfBytes: Math.round((result.pdfBase64.length * 3) / 4),
+          figures: result.figures.map((figure) => ({ page: figure.page, caption: figure.caption, url: figure.dataUrl })),
+          firstText: result.pages[0].text.slice(0, 400),
+          allPages: result.pages,
+          pdfBase64Length: result.pdfBase64.length,
+        };
+        log(`done: ${result.figures.length} figures, ${window.__out.textChars} chars`);
+      } catch (error) {
+        window.__out = { pages: 0, figures: [], textChars: 0, pdfBytes: 0, error: String(error && error.stack ? error.stack : error) };
+        log('FAILED ' + window.__out.error);
+      }
+      window.__done = true;
+    </script>
+  </body>
+</html>

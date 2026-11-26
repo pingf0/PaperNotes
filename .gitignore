@@ -1,0 +1,6 @@
+node_modules/
+.tmptest/
+.tmp-home/
+.npm-cache/
+*.log
+.DS_Store
