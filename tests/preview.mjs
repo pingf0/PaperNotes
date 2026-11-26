@@ -187,7 +187,7 @@ await build({
 const handler = createServer({ get: () => undefined, logger: { info() {}, warn: console.warn } }, PREFIX);
 /** 置 true 时 /health 按旧一代的字段返回（没有 assets），用来验"旧代码横幅"。 */
 let legacyHealth = false;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.png': 'image/png', '.json': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json' };
 
 const server = createHttpServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -755,10 +755,21 @@ await page.waitForTimeout(200);
 {
   await page.click('.pd-top button[title="设置数据目录"]');
   await page.waitForSelector('.pd-settings-body');
-  // 黄金比例：宽高比应接近 1.618（视口放得下时）
+  // 尺寸：宽度收窄到 840，高度跟着内容走（不再锁成 900×556 的大框），且不超过视口 72% + 一点余量
   const modalBox = await page.locator('.pd-modal').first().boundingBox();
-  const ratio = modalBox.width / modalBox.height;
-  if (Math.abs(ratio - 1.618) > 0.05) errors.push(`设置弹窗不是黄金比例：${ratio.toFixed(3)}（${Math.round(modalBox.width)}×${Math.round(modalBox.height)}）`);
+  if (modalBox.width > 880) errors.push(`设置弹窗太宽：${Math.round(modalBox.width)}px`);
+  if (modalBox.height > 900 * 0.74) errors.push(`设置弹窗太高：${Math.round(modalBox.height)}px（应跟着内容走）`);
+  const dirPaneBox = modalBox;
+  // 关闭 / 保存 统一钉在窗口右下角：底边与右边都要贴着弹窗内边（容许 24px 内边距）
+  const closeBox = await page.locator('.pd-modal-foot button', { hasText: '关闭' }).first().boundingBox();
+  const saveBox = await page.locator('.pd-modal-foot button', { hasText: '保存' }).first().boundingBox();
+  if (Math.abs(saveBox.x + saveBox.width - (dirPaneBox.x + dirPaneBox.width)) > 24)
+    errors.push('「保存」没有贴在弹窗右边');
+  if (Math.abs(saveBox.y + saveBox.height - (dirPaneBox.y + dirPaneBox.height)) > 24)
+    errors.push('「保存」没有贴在弹窗底边');
+  if (closeBox.x + closeBox.width > saveBox.x) errors.push('「关闭」应该排在「保存」左边');
+  if (Math.abs(closeBox.y - saveBox.y) > 1) errors.push('「关闭」「保存」不在同一行');
+  await shot('02d0-settings-dir');
   const tabs = await page.locator('.pd-tabs-inset .pd-tab').allInnerTexts();
   if (tabs.length < 3) errors.push('设置里页签不足三个：' + tabs.join(','));
   await page.locator('.pd-tabs-inset .pd-tab', { hasText: '模型' }).first().click();
@@ -779,12 +790,20 @@ await page.waitForTimeout(200);
   await page.locator('.pd-tabs-inset .pd-tab', { hasText: '数据目录' }).click();
   // 预览环境没有 Electron：应该优雅退回内置目录浏览器
   await page.getByRole('button', { name: '选择…' }).click();
-  await page.waitForSelector('.pd-dir-picker', { timeout: 8000 }).catch(() => errors.push('「选择…」没有打开目录选择器'));
+  await page.waitForSelector('.pd-dir-list', { timeout: 8000 }).catch(() => errors.push('「选择…」没有打开目录选择器'));
+  // 目录选择器的「取消 / 选用这个目录」也要在右下角的统一 footer 里，而不是跟着列表滚动
+  const pickerModals = page.locator('.pd-modal');
+  const pickerCount = await pickerModals.count();
+  if (pickerCount < 2) errors.push('目录选择器没有作为独立弹窗叠加');
+  const pickerFoot = await pickerModals.last().locator('.pd-modal-foot').count();
+  if (pickerFoot !== 1) errors.push('目录选择器的按钮没有放进统一 footer');
+  if ((await pickerModals.last().locator('.pd-dir-foot').count()) !== 0) errors.push('目录选择器还留着旧的正文按钮行');
   const listedPath = await page.locator('.pd-dir-path').innerText();
   if (!/[\\/]/.test(listedPath)) errors.push('目录选择器没有显示绝对路径：' + listedPath);
   // 先在当前目录看看，再上跳一级（home 下必然有子目录）
   await page.locator('.pd-dir-item.is-parent').click().catch(() => undefined);
   await page.waitForTimeout(250);
+  await shot('02d1-dir-picker');
   const dirCount = await page.locator('.pd-dir-item').count();
   if (dirCount < 1) errors.push(`目录选择器没有列出任何目录（${await page.locator('.pd-dir-path').innerText()}）`);
   await page.getByRole('button', { name: '取消' }).last().click();

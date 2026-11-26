@@ -501,8 +501,16 @@ function DirPicker({ initial, onCancel, onPick }) {
   }, [current]);
 
   return React.createElement(
-    'div',
-    { className: 'pd-dir-picker' },
+    Modal,
+    {
+      title: '选择数据目录',
+      onClose: onCancel,
+      // 动作按钮和其他弹窗一致：正文只放列表，按钮统一钉在右下角
+      footer: [
+        React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onCancel }, '取消'),
+        React.createElement('button', { key: 'p', className: 'pd-btn pd-btn-primary', onClick: () => onPick(current) }, '选用这个目录'),
+      ],
+    },
     React.createElement('div', { className: 'pd-dir-path', title: current }, current || '（家目录）'),
     React.createElement(
       'div',
@@ -524,12 +532,6 @@ function DirPicker({ initial, onCancel, onPick }) {
       dirs.length === 0 && !error ? React.createElement('div', { className: 'pd-hint' }, '这个目录下没有子目录') : null,
     ),
     error ? React.createElement('div', { className: 'pd-error' }, error) : null,
-    React.createElement(
-      'div',
-      { className: 'pd-dir-foot' },
-      React.createElement('button', { className: 'pd-btn', onClick: onCancel }, '取消'),
-      React.createElement('button', { className: 'pd-btn pd-btn-primary', onClick: () => onPick(current) }, '选用这个目录'),
-    ),
   );
 }
 
@@ -891,9 +893,9 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
     {
       title: '设置',
       onClose,
-      // 黄金比例：宽 900 → 高约 556，宽高比 1.618
-      width: 900,
-      ratio: 1.618,
+      // 高度跟着页签内容走（不再锁成黄金比例的大框）；宽度比 0.13.4 收窄一点，最大不超过视口 72%
+      width: 840,
+      maxHeight: '72vh',
       footer: [
         React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '关闭'),
         React.createElement('button', { key: 's', className: 'pd-btn pd-btn-primary', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
@@ -909,17 +911,13 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
     React.createElement('div', { className: 'pd-settings-body' }, tab === 'dir' ? dirPane : tab === 'api' ? apiPane : promptPane),
     error ? React.createElement('div', { className: 'pd-error' }, error) : null,
     picking
-      ? React.createElement(Modal, {
-          title: '选择数据目录',
-          onClose: () => setPicking(false),
-          children: React.createElement(DirPicker, {
-            initial: value,
-            onCancel: () => setPicking(false),
-            onPick: (picked) => {
-              setValue(picked);
-              setPicking(false);
-            },
-          }),
+      ? React.createElement(DirPicker, {
+          initial: value,
+          onCancel: () => setPicking(false),
+          onPick: (picked) => {
+            setValue(picked);
+            setPicking(false);
+          },
         })
       : null,
   );

@@ -57,11 +57,19 @@ export function Spinner() {
 
 /**
  * 通用弹窗：点遮罩或 Esc 关闭。
- * @param {{ title: string, onClose: () => void, children: any, footer?: any, width?: number }} props
+ *
+ * 高度有两种给法：
+ *   - 不传 `ratio`：**跟着内容走**（上限 `maxHeight`，默认 78vh）——设置这类页签内容长短不一的弹窗用这种，
+ *     不会为了一行内容撑出一个空荡荡的大框；
+ *   - 传 `ratio`：按宽高比给死高度（黄金比例那种视觉稿）。
+ *
+ * 底部动作按钮统一走 `footer`，由 `.pd-modal-foot` 固定在**窗口右下角**，正文滚动时不动。
+ *
+ * @param {{ title: string, onClose: () => void, children: any, footer?: any, width?: number, ratio?: number, maxHeight?: string }} props
  */
-export function Modal({ title, onClose, children, footer, width, ratio }) {
+export function Modal({ title, onClose, children, footer, width, ratio, maxHeight }) {
   const { useEffect, useState } = React;
-  /** 窗口变化时重算：按黄金比例给的尺寸不能超出视口。 */
+  /** 窗口变化时重算：给定尺寸不能超出视口。 */
   const [viewport, setViewport] = useState(() => ({
     w: typeof window === 'undefined' ? 1440 : window.innerWidth,
     h: typeof window === 'undefined' ? 900 : window.innerHeight,
@@ -72,21 +80,29 @@ export function Modal({ title, onClose, children, footer, width, ratio }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
   /**
-   * 按比例算尺寸：宽度优先，高度 = 宽 / ratio；放不下就先压宽度（视口 88%）。
-   * @returns {{width?: number, height?: number}}
+   * 算尺寸：宽度优先且不超视口 90%；给了 ratio 就把高度锁死成 w/ratio（放不下先压宽）。
+   * @returns {{width?: number, height?: number, maxHeight?: string}}
    */
   const size = (() => {
-    if (!width) return {};
-    if (!ratio) return { width };
-    const maxW = Math.max(320, Math.floor(viewport.w * 0.9));
-    const maxH = Math.max(280, Math.floor(viewport.h * 0.88));
-    let w = Math.min(width, maxW);
-    let h = Math.round(w / ratio);
-    if (h > maxH) {
-      h = maxH;
-      w = Math.min(maxW, Math.round(h * ratio));
+    const style = {};
+    if (width) {
+      const maxW = Math.max(320, Math.floor(viewport.w * 0.9));
+      style.width = Math.min(width, maxW);
     }
-    return { width: w, height: h };
+    if (width && ratio) {
+      const maxH = Math.max(280, Math.floor(viewport.h * 0.88));
+      let w = style.width;
+      let h = Math.round(w / ratio);
+      if (h > maxH) {
+        h = maxH;
+        w = Math.min(style.width, Math.round(h * ratio));
+      }
+      style.width = w;
+      style.height = h;
+    } else if (maxHeight) {
+      style.maxHeight = maxHeight;
+    }
+    return style;
   })();
   useEffect(() => {
     const onKey = (event) => {
@@ -109,7 +125,7 @@ export function Modal({ title, onClose, children, footer, width, ratio }) {
         className: 'pd-modal',
         role: 'dialog',
         'aria-label': title,
-        ...(width ? { style: size } : {}),
+        style: size,
       },
       React.createElement('div', { className: 'pd-modal-head' }, title),
       React.createElement('div', { className: 'pd-modal-body' }, children),

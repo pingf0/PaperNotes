@@ -131,8 +131,10 @@ export const CSS = `
 }
 .pd-notice-text { flex: 1; line-height: 1.6; }
 .pd-notice-error {
-  background: var(--dsw-alias-state-error-secondary, #fdecec);
-  border-color: var(--dsw-alias-state-error-primary, #c0392b);
+  /* 真实主题里 state-error-secondary 是饱和红（不是淡底），直接当背景会红底红字；
+     这里退成 12% 红色蒙层，明暗两套都靠 -primary 当前景色。 */
+  background: rgba(239, 68, 68, .12);
+  border-color: rgba(239, 68, 68, .45);
   color: var(--dsw-alias-state-error-primary, #a12a20);
 }
 .pd-empty { padding: 46px 20px; text-align: center; color: var(--dsw-alias-label-tertiary, #999); font-size: 13px; }
@@ -399,16 +401,16 @@ export const CSS = `
 .pd-card-detail .pd-formula { margin: 8px 0; padding: 8px 10px; }
 .pd-card-detail .pd-field-label { margin: 10px 0 4px; }
 
-.pd-tabs-inset { padding: 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l1, #eee); }
-/* 弹窗是固定高度时，正文自己吃掉剩余空间并滚动 */
+.pd-tabs-inset { padding: 0 16px; border-bottom: 1px solid var(--dsw-alias-border-l1, #eee); }
+/* 高度跟着内容走，超出上限时正文自己滚动（按钮始终在右下角） */
 .pd-settings-body {
-  padding: 18px 22px; display: flex; flex-direction: column; gap: 14px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
   overflow-y: auto; min-height: 0; flex: 1 1 auto;
 }
 .pd-row { display: flex; align-items: center; gap: 8px; }
 .pd-row-end { justify-content: flex-end; }
 .pd-model-row {
-  display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 6px;
   border: 1px solid var(--dsw-alias-border-l2, #dcdcdc); border-radius: 9px;
   background: var(--dsw-alias-bg-layer-2, #fff);
 }
@@ -420,14 +422,13 @@ export const CSS = `
 }
 .pd-model-actions { display: flex; gap: 4px; flex: none; }
 .pd-model-draft {
-  border: 1px dashed var(--dsw-alias-border-l4, #c2ccd9); border-radius: 10px; padding: 12px; margin: 8px 0;
+  border: 1px dashed var(--dsw-alias-border-l4, #c2ccd9); border-radius: 10px; padding: 10px 12px; margin: 6px 0;
 }
 .pd-model-draft-foot {
   display: flex; justify-content: flex-end; align-items: center; gap: 8px;
-  margin-top: 14px; padding-top: 10px;
+  margin-top: 10px; padding-top: 8px;
   border-top: 1px solid var(--dsw-alias-border-l1, #eee);
 }
-.pd-dir-picker { display: flex; flex-direction: column; gap: 8px; }
 .pd-dir-path {
   font-size: 11.5px; padding: 6px 8px; border-radius: 6px; background: var(--dsw-alias-bg-layer-1, #f6f7f9);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -439,16 +440,15 @@ export const CSS = `
 }
 .pd-dir-item:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.05)); }
 .pd-dir-item.is-parent { color: var(--dsw-alias-label-secondary, #666); }
-.pd-dir-foot { display: flex; justify-content: flex-end; gap: 8px; }
-.pd-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.pd-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 .pd-settings-grid .pd-field:first-child { grid-column: 1 / -1; }
 .pd-range { width: 100%; accent-color: var(--dsw-alias-brand-primary, #2f6fd0); }
 .pd-test-result {
   margin-top: 2px; padding: 8px 10px; border-radius: 8px; font-size: 11.5px; line-height: 1.6;
-  background: var(--dsw-alias-state-error-secondary, #fdecec); color: var(--dsw-alias-state-error-primary, #a12a20);
+  background: rgba(239, 68, 68, .12); color: var(--dsw-alias-state-error-primary, #a12a20);
 }
 .pd-test-result.is-ok {
-  background: var(--dsw-alias-state-success-secondary, #eaf7ef); color: var(--dsw-alias-state-success-primary, #166534);
+  background: rgba(34, 197, 94, .14); color: var(--dsw-alias-state-success-primary, #166534);
 }
 .pd-modal-mask { position: fixed; inset: 0; z-index: 90; padding: 24px; box-sizing: border-box; background: rgba(10,18,30,.38); display: flex; align-items: center; justify-content: center; }
 /* 弹窗自己限高：窗口矮的时候让正文滚动，按钮永远留在可视范围内 */
