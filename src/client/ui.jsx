@@ -59,7 +59,7 @@ export function Spinner() {
  * 通用弹窗：点遮罩或 Esc 关闭。
  * @param {{ title: string, onClose: () => void, children: any, footer?: any, width?: number }} props
  */
-export function Modal({ title, onClose, children, footer }) {
+export function Modal({ title, onClose, children, footer, width }) {
   const { useEffect } = React;
   useEffect(() => {
     const onKey = (event) => {
@@ -78,7 +78,12 @@ export function Modal({ title, onClose, children, footer }) {
     },
     React.createElement(
       'div',
-      { className: 'pd-modal', role: 'dialog', 'aria-label': title },
+      {
+        className: 'pd-modal',
+        role: 'dialog',
+        'aria-label': title,
+        ...(width ? { style: { width } } : {}),
+      },
       React.createElement('div', { className: 'pd-modal-head' }, title),
       React.createElement('div', { className: 'pd-modal-body' }, children),
       footer ? React.createElement('div', { className: 'pd-modal-foot' }, footer) : null,

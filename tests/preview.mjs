@@ -767,6 +767,7 @@ await page.waitForTimeout(200);
   await page.locator('input[placeholder="https://api.moonshot.cn/v1"]').fill('https://api.moonshot.cn/v1');
   await page.locator('input[placeholder="sk-…"]').fill('sk-test-1234');
   await page.locator('input[placeholder="moonshot-v1-32k"]').fill('moonshot-v1-32k');
+  await shot('02e1-model-draft');
   await page.getByRole('button', { name: '保存模型' }).click();
   await page.waitForTimeout(200);
   if ((await page.locator('.pd-model-row').count()) === 0) errors.push('添加模型后列表里没有出现');

@@ -486,7 +486,15 @@ function DirPicker({ initial, onCancel, onPick }) {
         setDirs(result.dirs ?? []);
         setError('');
       })
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => {
+        if (!alive) return;
+        const text = e instanceof Error ? e.message : String(e);
+        setError(
+          /no route/i.test(text)
+            ? '当前运行的宿主还没有目录浏览接口，重启 DSH 后即可用（也可以直接在上面手填路径）。'
+            : text,
+        );
+      });
     return () => {
       alive = false;
     };
@@ -747,7 +755,7 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
               ),
               React.createElement(
                 'div',
-                { className: 'pd-row pd-row-end' },
+                { className: 'pd-model-draft-foot' },
                 React.createElement(
                   'button',
                   {
@@ -868,7 +876,7 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
     {
       title: '设置',
       onClose,
-      width: 620,
+      width: 760,
       footer: [
         React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '关闭'),
         React.createElement('button', { key: 's', className: 'pd-btn pd-btn-primary', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
