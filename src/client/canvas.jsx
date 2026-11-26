@@ -46,6 +46,8 @@ const TYPE_STYLE = {
   principle: { color: '#2f6fd0', label: '原理' },
   formula: { color: '#7c3aed', label: '公式' },
   result: { color: '#0f9d70', label: '结果' },
+  question: { color: '#7c3aed', label: '问题' },
+  background: { color: '#64748b', label: '背景' },
   method: { color: '#b45309', label: '步骤' },
   phenomenon: { color: '#0e7490', label: '现象' },
   conclusion: { color: '#15803d', label: '结论' },
@@ -61,6 +63,63 @@ const TYPE_STYLE = {
  * @param {object} to 目标节点
  * @param {object} metrics 节点实测尺寸
  */
+/**
+ * 按连线把节点排成"从左到右"的流程图：同一深度的节点放一列，列内纵向堆叠。
+ *
+ * 自动生成的图经常从原理节点像刺猬一样向外发散；按 BFS 深度分列之后，
+ * "动机 → 背景 → 原理 → 问题 → 方法 → 实验 → 结论" 这条主线就一目了然了。
+ *
+ * @param {Array} blocks 节点
+ * @param {Array} edges 连线
+ * @param {Record<string, {w:number,h:number}>} metrics 实测尺寸（没有就用默认值）
+ * @returns {Array} 新节点数组（坐标已改写）
+ */
+function flowLayout(blocks, edges, metrics) {
+  const ids = new Set(blocks.map((block) => block.id));
+  const children = new Map();
+  const indegree = new Map(blocks.map((block) => [block.id, 0]));
+  for (const edge of edges ?? []) {
+    if (!ids.has(edge.from) || !ids.has(edge.to)) continue;
+    children.set(edge.from, [...(children.get(edge.from) ?? []), edge.to]);
+    indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
+  }
+  const depth = new Map();
+  const queue = blocks.filter((block) => (indegree.get(block.id) ?? 0) === 0).map((block) => block.id);
+  for (const id of queue) depth.set(id, 0);
+  while (queue.length > 0) {
+    const id = queue.shift();
+    for (const next of children.get(id) ?? []) {
+      if (depth.has(next)) continue;
+      depth.set(next, (depth.get(id) ?? 0) + 1);
+      queue.push(next);
+    }
+  }
+  const maxDepth = Math.max(0, ...[...depth.values()]);
+  for (const block of blocks) {
+    if (depth.has(block.id)) continue;
+    depth.set(block.id, Math.max(0, Math.min(maxDepth, Math.round((block.x ?? 0) / 360))));
+  }
+
+  const columns = new Map();
+  for (const block of blocks) {
+    const column = depth.get(block.id) ?? 0;
+    columns.set(column, [...(columns.get(column) ?? []), block]);
+  }
+  const COL_W = 380;
+  const ROW_GAP = 36;
+  const placed = [];
+  for (const [column, list] of [...columns.entries()].sort((a, b) => a[0] - b[0])) {
+    let y = 32;
+    const sorted = list.slice().sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+    for (const block of sorted) {
+      const size = metrics[block.id] ?? { w: block.w ?? 300, h: block.figureId ? 360 : 220 };
+      placed.push({ ...block, x: 40 + column * COL_W, y });
+      y += size.h + ROW_GAP;
+    }
+  }
+  return placed;
+}
+
 function edgePath(from, to, metrics) {
   const fromMetric = metrics[from.id] ?? { w: from.w ?? 300, h: 120 };
   const toMetric = metrics[to.id] ?? { w: to.w ?? 300, h: 120 };
@@ -177,6 +236,15 @@ export function PaperView({ paperId, onClose, onChanged }) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
   }, []);
 
+  /** 按连线把节点重排成流程图；保留一次撤销。 */
+  const tidyLayout = () => {
+    const previous = paperRef.current.blocks ?? [];
+    const next = flowLayout(previous, paperRef.current.edges ?? [], metrics);
+    update({ blocks: next }, true);
+    setLayoutUndo(previous);
+    window.setTimeout(() => setLayoutUndo((current) => (current === previous ? null : current)), 10_000);
+  };
+
   /** 把当前视图（平移 + 缩放）落盘。 */
   /** 重新裁图：读已存的 source.pdf，用当前算法重跑一遍，只替换图片。 */
   const [recropping, setRecropping] = useState(null);
@@ -184,6 +252,8 @@ export function PaperView({ paperId, onClose, onChanged }) {
   const [assetVersion, setAssetVersion] = useState(0);
   /** 重新裁图的结果提示（成功/失败都显示在工具栏下面）。 */
   const [recropNote, setRecropNote] = useState(null);
+  /** 重排布局后给一次撤销机会。 */
+  const [layoutUndo, setLayoutUndo] = useState(null);
   const recrop = async () => {
     if (recropping) return;
     if (!window.confirm('用当前算法重新裁一遍这篇的图？节点、坐标、笔记和会话都不会动。')) return;
@@ -615,6 +685,16 @@ export function PaperView({ paperId, onClose, onChanged }) {
       'button',
       {
         className: 'pd-btn pd-btn-ghost',
+        onClick: tidyLayout,
+        title: '按连线把节点重排成从左到右的流程图',
+      },
+      React.createElement(Icon, { name: 'layers', size: 12 }),
+      '整理布局',
+    ),
+    React.createElement(
+      'button',
+      {
+        className: 'pd-btn pd-btn-ghost',
         onClick: recrop,
         disabled: Boolean(recropping),
         title: '用当前算法重新裁一遍这篇的图（节点、坐标、笔记、会话都不动）',
@@ -677,6 +757,25 @@ export function PaperView({ paperId, onClose, onChanged }) {
       );
     }
   }
+
+  const layoutBanner = layoutUndo
+    ? React.createElement(
+        'div',
+        { className: 'pd-notice' },
+        React.createElement('div', { className: 'pd-notice-text' }, '已按连线重排成流程图'),
+        React.createElement(
+          'button',
+          {
+            className: 'pd-btn pd-btn-sm pd-btn-ghost',
+            onClick: () => {
+              update({ blocks: layoutUndo }, true);
+              setLayoutUndo(null);
+            },
+          },
+          '撤销',
+        ),
+      )
+    : null;
 
   const recropBanner = recropNote
     ? React.createElement(
@@ -841,7 +940,7 @@ export function PaperView({ paperId, onClose, onChanged }) {
   return React.createElement(
     'div',
     { className: 'pd-body' },
-    React.createElement('div', { className: 'pd-main' }, toolbar, recropBanner, canvas),
+    React.createElement('div', { className: 'pd-main' }, toolbar, recropBanner, layoutBanner, canvas),
     drawerOpen
       ? React.createElement(Drawer, {
           paper,

@@ -1,0 +1,55 @@
+<!doctype html>
+<html><head><meta charset="utf-8" /></head><body><pre id="log">…</pre>
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const pages = (params.get('pages') ?? '1').split(',').map(Number);
+  const out = [];
+  const pdfjs = await import('/dsh-paper-desk-4821/pdfjs.mjs');
+  pdfjs.GlobalWorkerOptions.workerSrc = '/dsh-paper-desk-4821/worker';
+  const bytes = new Uint8Array(await (await fetch('/sample.pdf')).arrayBuffer());
+  const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
+  for (const number of pages) {
+    const page = await doc.getPage(number);
+    const ops = await page.getOperatorList();
+    const viewport = page.getViewport({ scale: 2 });
+    const { OPS, Util } = pdfjs;
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    const rects = [];
+    for (let i = 0; i < ops.fnArray.length; i += 1) {
+      const fn = ops.fnArray[i];
+      if (fn === OPS.save) stack.push(ctm);
+      else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+      else if (fn === OPS.transform) ctm = Util.transform(ctm, ops.argsArray[i]);
+      else if (fn === OPS.paintFormXObjectBegin) {
+        const bbox = ops.argsArray[i]?.[1];
+        const full = Util.transform(viewport.transform, ctm);
+        const map = (x, y) => [full[0] * x + full[2] * y + full[4], full[1] * x + full[3] * y + full[5]];
+        const unit = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => map(x, y));
+        const viaBbox = Array.isArray(bbox) ? [[bbox[0], bbox[1]], [bbox[2], bbox[3]]].map(([x, y]) => map(x, y)) : null;
+        const box = (pts) => ({
+          x: Math.round(Math.min(...pts.map((p) => p[0]))),
+          y: Math.round(Math.min(...pts.map((p) => p[1]))),
+          w: Math.round(Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0]))),
+          h: Math.round(Math.max(...pts.map((p) => p[1])) - Math.min(...pts.map((p) => p[1]))),
+        });
+        rects.push({ bbox, unit: box(unit), viaBbox: viaBbox ? box(viaBbox) : null });
+      }
+      else if (fn === OPS.paintImageXObject) {
+        const full = Util.transform(viewport.transform, ctm);
+        const pts = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => [full[0] * x + full[2] * y + full[4], full[1] * x + full[3] * y + full[5]]);
+        const xs = pts.map((point) => point[0]);
+        const ys = pts.map((point) => point[1]);
+        rects.push({ image: true, unit: {
+          x: Math.round(Math.min(...xs)),
+          y: Math.round(Math.min(...ys)),
+          w: Math.round(Math.max(...xs) - Math.min(...xs)),
+          h: Math.round(Math.max(...ys) - Math.min(...ys)),
+        } });
+      }
+    }
+    out.push({ page: number, viewport: { w: Math.round(viewport.width), h: Math.round(viewport.height) }, rects });
+  }
+  window.__out = out;
+  window.__done = true;
+</script></body></html>

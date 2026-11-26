@@ -181,6 +181,21 @@ export function buildBlocks(draft, figures, fallbackTitle) {
     w: TEXT_W,
   });
 
+  const backgroundText = String(draft.background ?? '').trim();
+  const backgroundId = 'b-background';
+  if (backgroundText.length > 0) {
+    push({
+      id: backgroundId,
+      type: 'background',
+      title: '背景与已有工作',
+      text: backgroundText,
+      x: COL_TEXT + 380,
+      y: 32,
+      w: TEXT_W,
+    });
+    edges.push({ from: motivationId, to: backgroundId });
+  }
+
   const principleFigure = figureFor(draft.principle?.figureIndex);
   const principleId = 'b-principle';
   push({
@@ -189,11 +204,88 @@ export function buildBlocks(draft, figures, fallbackTitle) {
     title: '核心原理',
     text: String(draft.principle?.summary ?? '').trim() || '（模型没有给出原理说明，可以在这里自己补写）',
     figureId: principleFigure?.id,
-    x: COL_TEXT,
+    x: COL_TEXT + 380,
     y: 330,
     w: principleFigure ? FIGURE_W : TEXT_W,
   });
-  edges.push({ from: motivationId, to: principleId });
+  edges.push({ from: backgroundText.length > 0 ? backgroundId : motivationId, to: principleId });
+
+  const questions = Array.isArray(draft.questions) ? draft.questions.slice(0, 4) : [];
+  if (questions.length > 0) {
+    // 一个子问题一行：问题 → 方法 → 实验 → 结论，横向排开，像流程图一样读
+    const COL_Q = COL_TEXT + 720;
+    const COL_METHOD = COL_Q + 360;
+    const COL_EXP = COL_METHOD + 380;
+    const COL_CONCL = COL_EXP + 380;
+    let rowY = 32;
+    questions.forEach((question, index) => {
+      const qId = `b-question-${index + 1}`;
+      const qFigure = figureFor(question?.figureIndex);
+      push({
+        id: qId,
+        type: 'question',
+        title: `研究问题 ${index + 1}`,
+        text: String(question?.question ?? '').trim() || '（这个子问题）',
+        figureId: qFigure?.id,
+        x: COL_Q,
+        y: rowY,
+        w: qFigure ? FIGURE_W : TEXT_W,
+      });
+      edges.push({ from: principleId, to: qId });
+
+      const methodId = `b-method-${index + 1}`;
+      const experiment = Array.isArray(question?.experiments) ? question.experiments[0] : undefined;
+      const expFigure = figureFor(experiment?.figureIndex);
+      push({
+        id: methodId,
+        type: 'method',
+        title: `方法 · ${String(question?.question ?? `问题 ${index + 1}`).trim().slice(0, 24)}`,
+        text: String(question?.principle ?? '').trim() || '（这一步的方法）',
+        x: COL_METHOD,
+        y: rowY,
+        w: TEXT_W,
+      });
+      edges.push({ from: qId, to: methodId });
+
+      const experimentId = `b-experiment-${index + 1}`;
+      push({
+        id: experimentId,
+        type: 'phenomenon',
+        title: String(experiment?.name ?? `实验 ${index + 1}`).trim() || `实验 ${index + 1}`,
+        text: String(experiment?.text ?? '').trim() || '（这一步的实验与观察）',
+        figureId: expFigure?.id,
+        x: COL_EXP,
+        y: rowY,
+        w: expFigure ? FIGURE_W : TEXT_W,
+      });
+      edges.push({ from: methodId, to: experimentId });
+
+      const conclusionText = String(question?.conclusion ?? '').trim();
+      if (conclusionText.length > 0) {
+        const conclusionId = `b-conclusion-${index + 1}`;
+        push({
+          id: conclusionId,
+          type: 'conclusion',
+          title: `结论 · 问题 ${index + 1}`,
+          text: conclusionText,
+          x: COL_CONCL,
+          y: rowY,
+          w: TEXT_W,
+        });
+        edges.push({ from: experimentId, to: conclusionId });
+      }
+
+      // 行高：按这一行最高的那个节点往下排
+      rowY += expFigure || qFigure ? 420 : 300;
+    });
+
+    return {
+      title: String(draft.title ?? '').trim() || fallbackTitle,
+      abstract: String(draft.abstract ?? '').trim(),
+      blocks,
+      edges,
+    };
+  }
 
   const formulaBlocks = (Array.isArray(draft.formulas) ? draft.formulas : []).slice(0, 6);
   formulaBlocks.forEach((formula, index) => {

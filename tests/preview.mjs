@@ -416,6 +416,40 @@ const posAfterNw = await readNodePos();
 const sizeAfterNw = await sizeOf();
 if (!(sizeAfterNw.w > sizeBeforeNw.w + 30)) errors.push(`拖左上角没有变宽：${sizeBeforeNw.w} → ${sizeAfterNw.w}`);
 if (!(posAfterNw.x < posBeforeNw.x - 20)) errors.push(`拖左上角时位置没跟着动：${posBeforeNw.x} → ${posAfterNw.x}`);
+// 整理布局：按连线重排后，节点不再像刺猬一样围着一个点
+const beforeTidy = await page.evaluate(() =>
+  [...document.querySelectorAll('.pd-node')].map((node) => {
+    const style = node.getAttribute('style') ?? '';
+    return [Number(/left: (-?[0-9.]+)/.exec(style)?.[1] ?? 0), Number(/top: (-?[0-9.]+)/.exec(style)?.[1] ?? 0)];
+  }),
+);
+await page.getByRole('button', { name: '整理布局' }).click();
+await page.waitForTimeout(300);
+const afterTidy = await page.evaluate(() =>
+  [...document.querySelectorAll('.pd-node')].map((node) => {
+    const style = node.getAttribute('style') ?? '';
+    return [Number(/left: (-?[0-9.]+)/.exec(style)?.[1] ?? 0), Number(/top: (-?[0-9.]+)/.exec(style)?.[1] ?? 0)];
+  }),
+);
+if (JSON.stringify(beforeTidy) === JSON.stringify(afterTidy)) errors.push('整理布局没有改变节点位置');
+const xs = afterTidy.map(([x]) => x);
+if (Math.max(...xs) - Math.min(...xs) < 300) errors.push('整理布局后节点没有横向铺开');
+if ((await page.locator('.pd-notice').count()) === 0) errors.push('整理布局后没有出现撤销提示');
+await shot('04f-tidy');
+const noticeText = await page.locator('.pd-notice').first().innerText().catch(() => '(无提示)');
+if (!noticeText.includes('撤销')) {
+  errors.push('整理布局后没有撤销入口：' + noticeText.slice(0, 60));
+} else {
+  await page.locator('.pd-notice button', { hasText: '撤销' }).first().click();
+}
+await page.waitForTimeout(250);
+const undone = await page.evaluate(() =>
+  [...document.querySelectorAll('.pd-node')].map((node) => {
+    const style = node.getAttribute('style') ?? '';
+    return [Number(/left: (-?[0-9.]+)/.exec(style)?.[1] ?? 0), Number(/top: (-?[0-9.]+)/.exec(style)?.[1] ?? 0)];
+  }),
+);
+if (JSON.stringify(undone) !== JSON.stringify(beforeTidy)) errors.push('撤销没有恢复原布局');
 await shot('04e-node-resized');
 // 双击右下角恢复默认尺寸，避免后续步骤被放大的节点挡住
 const corner2 = await page.locator('.pd-node .pd-rs-se').first().boundingBox();

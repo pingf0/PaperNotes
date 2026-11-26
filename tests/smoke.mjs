@@ -177,6 +177,44 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('实验类：没有公式节点', !types.includes('formula'), types.join(','));
 }
 
+// 流程图模式：研究问题为主线时，节点按"问题 → 方法 → 实验 → 结论"横向排开
+{
+  const { buildBlocks } = await import('../src/host/import.js');
+  const flow = buildBlocks(
+    {
+      title: 'flow paper',
+      abstract: 'a',
+      motivation: '为什么要做',
+      background: '别人做过什么',
+      principle: { summary: '总原理', figureIndex: -1 },
+      questions: [
+        { question: '问题一', principle: '方法一', experiments: [{ name: '实验一', text: '结果一' }], conclusion: '结论一' },
+        { question: '问题二', principle: '方法二', experiments: [{ name: '实验二', text: '结果二' }], conclusion: '结论二' },
+      ],
+    },
+    [],
+    't',
+  );
+  const byType = (type) => flow.blocks.filter((block) => block.type === type);
+  check('流程图：背景/问题/结论节点都在', ['background', 'question', 'conclusion'].every((type) => byType(type).length > 0), flow.blocks.map((b) => b.type).join(','));
+  const [q1] = byType('question');
+  const [m1] = byType('method');
+  const [e1] = byType('phenomenon');
+  const [c1] = byType('conclusion');
+  check(
+    '流程图：一行的横坐标递增',
+    q1.x < m1.x && m1.x < e1.x && e1.x < c1.x,
+    [q1.x, m1.x, e1.x, c1.x].join(' < '),
+  );
+  const chain = flow.edges.map((edge) => `${edge.from}>${edge.to}`);
+  check(
+    '流程图：问题串成链而不是扇形',
+    chain.includes('b-question-1>b-method-1') && chain.includes('b-method-1>b-experiment-1') && chain.includes('b-experiment-1>b-conclusion-1'),
+    chain.join(' '),
+  );
+  check('流程图：两个问题的结论各自独立', byType('conclusion').length === 2);
+}
+
 // 重新裁图：替换 figures、保持节点 figureId 可解析、清掉不再引用的旧文件
 const recrop = await json('/paper/figures', {
   method: 'POST',
