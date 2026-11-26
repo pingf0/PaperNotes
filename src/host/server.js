@@ -20,6 +20,8 @@ import {
   condenseNote,
 } from './chat.js';
 import { reanalyzePaper, migrateAnnotations, structurePaper } from './import.js';
+import { maskSettings, readSettings, writeSettings } from './settings.js';
+import { testConnection } from './openai.js';
 import { llmReady } from './llm.js';
 import {
   dataDir,
@@ -223,6 +225,16 @@ export function createServer(ctx, prefix) {
             models = [];
           }
           providers.push({ id: provider.id, name: provider.name ?? provider.id, models });
+        }
+        // 自定义接口：把它当成一个 provider 列出来，界面上就能选到
+        const settings = await readSettings();
+        if (settings.provider === 'custom' && settings.model) {
+          providers.unshift({
+            id: 'custom',
+            name: '自定义接口',
+            models: [{ id: settings.model, name: settings.model }],
+          });
+          current = { provider: 'custom', model: settings.model };
         }
         return sendJson(res, 200, { current, providers });
       }
@@ -444,6 +456,33 @@ export function createServer(ctx, prefix) {
         const index = await readIndex(dir);
         await writeIndex(dir, { ...index, papers: [...index.papers, summarize(doc)] });
         return sendJson(res, 200, { id, categoryId: doc.categoryId, title: doc.title });
+      }
+
+      if (path === '/settings' && method === 'GET') {
+        return sendJson(res, 200, maskSettings(await readSettings()));
+      }
+
+      if (path === '/settings' && method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        const next = await writeSettings(body);
+        return sendJson(res, 200, maskSettings(next));
+      }
+
+      if (path === '/settings/test' && method === 'POST') {
+        // 连通性测试：只试用户填的这套配置，不影响当前设置
+        const body = JSON.parse(await readBody(req));
+        const current = await readSettings();
+        const apiKey = /[•]/.test(String(body.apiKey ?? '')) ? current.apiKey : String(body.apiKey ?? '');
+        const config = {
+          baseUrl: String(body.baseUrl ?? current.baseUrl ?? '').trim(),
+          apiKey,
+          model: String(body.model ?? current.model ?? '').trim(),
+        };
+        if (config.baseUrl.length === 0 || config.model.length === 0) {
+          return sendJson(res, 400, { ok: false, error: '先填 baseUrl 和模型名' });
+        }
+        const result = await testConnection(config);
+        return sendJson(res, 200, result);
       }
 
       if (path === '/paper/reanalyze' && method === 'POST') {

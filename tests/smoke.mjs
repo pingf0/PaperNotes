@@ -215,6 +215,30 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('流程图：两个问题的结论各自独立', byType('conclusion').length === 2);
 }
 
+// 插件设置：读写、打码、温度钳制、连通性测试
+{
+  const before = await json('/settings');
+  check('设置：默认走 DSH 模型', before.payload.provider === 'host', JSON.stringify(before.payload.provider));
+  const saved = await json('/settings', {
+    method: 'POST',
+    body: {
+      provider: 'custom',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      apiKey: 'sk-abcdefgh12345678',
+      model: 'moonshot-v1-32k',
+      temperature: 5,
+      persona: '你是严谨的导师',
+      prompts: { chat: '先给结论' },
+    },
+  });
+  check('设置：Key 打码返回', /•/.test(saved.payload.apiKey) && !saved.payload.apiKey.includes('12345678'), saved.payload.apiKey);
+  check('设置：温度被钳制到 1.5', saved.payload.temperature === 1.5, String(saved.payload.temperature));
+  const again = await json('/settings', { method: 'POST', body: { apiKey: saved.payload.apiKey, temperature: 0.7 } });
+  check('设置：被打码的 Key 不会被覆盖', again.payload.hasKey === true && again.payload.temperature === 0.7);
+  const bad = await json('/settings/test', { method: 'POST', body: { baseUrl: '', model: '' } });
+  check('设置：测试连接缺参数时报错', bad.status === 400, JSON.stringify(bad.payload));
+}
+
 // 重新分析：模型不可用时要回 502（前端会显示原因），而不是 500 或挂死
 {
   const res = await json('/paper/reanalyze', { method: 'POST', body: { id: doc.id } });

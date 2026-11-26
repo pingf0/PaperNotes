@@ -396,6 +396,18 @@ export const CSS = `
 .pd-card-detail .pd-formula { margin: 8px 0; padding: 8px 10px; }
 .pd-card-detail .pd-field-label { margin: 10px 0 4px; }
 
+.pd-tabs-inset { padding: 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l1, #eee); }
+.pd-settings-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 62vh; }
+.pd-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pd-settings-grid .pd-field:first-child { grid-column: 1 / -1; }
+.pd-range { width: 100%; accent-color: var(--dsw-alias-brand-primary, #2f6fd0); }
+.pd-test-result {
+  margin-top: 2px; padding: 8px 10px; border-radius: 8px; font-size: 11.5px; line-height: 1.6;
+  background: var(--dsw-alias-state-error-secondary, #fdecec); color: var(--dsw-alias-state-error-primary, #a12a20);
+}
+.pd-test-result.is-ok {
+  background: var(--dsw-alias-state-success-secondary, #eaf7ef); color: var(--dsw-alias-state-success-primary, #166534);
+}
 .pd-modal-mask { position: fixed; inset: 0; z-index: 90; padding: 24px; box-sizing: border-box; background: rgba(10,18,30,.38); display: flex; align-items: center; justify-content: center; }
 /* 弹窗自己限高：窗口矮的时候让正文滚动，按钮永远留在可视范围内 */
 .pd-modal {

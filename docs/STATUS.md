@@ -583,6 +583,25 @@ bbox 是整页 612×792），所以"用 XObject bbox 精确框定图"这条路�
 
 验证：宿主 39/39、JSON 修复 9/9、bundle 10/10、公式 6/6、空回复 11/11。
 
+## 0.13.0：插件设置（自带 API + 提示词角色）
+
+用户要求：插件里能配自己的 API（OpenAI / Kimi 等），并且能设计对话的提示词/角色。
+
+1. **设置存储**：`$DSH_HOME/paper-desk/settings.json`（和数据目录分开，换库不丢 Key）。
+   Key 明文存本机，接口返回一律打码（`sk-a••••5678`），提交时含 `•` 的视为未修改。
+2. **自定义模型接口**：`src/host/openai.js` 用内置 fetch 实现 OpenAI 兼容的流式 chat completions
+   （OpenAI / Kimi / DeepSeek / Ollama / 中转站通用），支持 `reasoning_content`；`llm.js` 里只要设置了
+   `provider: 'custom'` 就整条走它，不再依赖 DSH 的模型选择；`/models` 也会把自定义模型列进去。
+3. **提示词角色**：设置里有全局「角色设定」+ 三个场景补充（逐块问答 / core 核 / 对比讨论），
+   它们**追加**在内置 system prompt 后面 —— 内置的"只依据摘录、不许编数字、JSON 结构"这些硬约束不会被覆盖。
+4. **连通性测试**：设置页「测试连接」直接打一次最小请求，回显耗时与回复或错误原因。
+5. **界面**：设置弹窗拆成三个页签（数据目录 / 模型 API / 提示词），下拉用自绘组件；
+   baseUrl 与模型名一键套用预设（OpenAI / Kimi / DeepSeek / Ollama / 自定义）。
+
+验证：宿主 44/44（新增 5 条设置用例：默认值、Key 打码、温度钳制、打码 Key 不回写、缺参数报错）、
+接口客户端 7/7（新增 `tests/openai.mjs`：流式拼装、reasoning 回调、鉴权头、401 透传、连通性测试、连不上时的可读错误）、
+预览台新增"设置三个页签都能打开并渲染"的断言。
+
 ## 当前安装版本
 
 `dsh-paper-desk@0.2.0`（generation `…+0.2.0+8c6c9402759c`）。

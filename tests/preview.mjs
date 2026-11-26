@@ -751,6 +751,25 @@ await page.locator('.pd-compose-input').evaluate((el) => {
 });
 await page.waitForTimeout(200);
 
+// 设置：三个页签都要能打开（模型 API / 提示词是本轮新增）
+{
+  await page.click('.pd-top button[title="设置数据目录"]');
+  await page.waitForSelector('.pd-settings-body');
+  const tabs = await page.locator('.pd-tabs-inset .pd-tab').allInnerTexts();
+  if (tabs.length < 3) errors.push('设置里页签不足三个：' + tabs.join(','));
+  await page.locator('.pd-tabs-inset .pd-tab', { hasText: '模型 API' }).click();
+  await page.waitForTimeout(150);
+  const apiPaneText = await page.locator('.pd-settings-body').innerText();
+  if (!apiPaneText.includes('模型来源')) errors.push('模型 API 页签没有渲染：' + apiPaneText.slice(0, 40));
+  await page.locator('.pd-tabs-inset .pd-tab', { hasText: '提示词' }).click();
+  await page.waitForTimeout(150);
+  const promptPaneText = await page.locator('.pd-settings-body').innerText();
+  if (!promptPaneText.includes('角色设定')) errors.push('提示词页签没有渲染：' + promptPaneText.slice(0, 40));
+  await shot('02d-settings');
+  await page.locator('.pd-modal-foot button', { hasText: '关闭' }).click();
+  await page.waitForTimeout(150);
+}
+
 // 流式输出：thinking 先出来，正文随 token 增长，结束后替换成正式消息
 await page.fill('.pd-compose-input', '这块怎么理解？');
 await page.waitForTimeout(200);

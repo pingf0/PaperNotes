@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { getCachedSettings, readSettings, useCustomProvider } from './settings.js';
+import { streamChat } from './openai.js';
 
 /**
  * ctx.llm 的一层薄包装：把"问一句、拿一段文本"收敛成一个函数。
@@ -52,6 +54,8 @@ function currentModel(ctx) {
  * @param ctx 宿主上下文
  */
 export function llmReady(ctx) {
+  // 自定义接口配好了就算就绪（不依赖 DSH 自己的模型选择）
+  if (useCustomProvider(getCachedSettings())) return true;
   const llm = ctx.get?.('llm');
   if (!llm || typeof llm.stream !== 'function') return false;
   try {
@@ -85,6 +89,24 @@ export async function complete(ctx, options) {
  * @returns {Promise<{ok:boolean, text?:string, error?:string}>}
  */
 export async function streamText(ctx, options, onEvent = () => {}) {
+  // 用户在插件设置里配了 OpenAI 兼容接口，就整条走它（不依赖 DSH 的模型选择）
+  const settings = await readSettings().catch(() => undefined);
+  if (settings && useCustomProvider(settings) && !options.ignoreCustomProvider) {
+    return streamChat(
+      { baseUrl: settings.baseUrl, apiKey: settings.apiKey, model: settings.model },
+      {
+        system: options.system,
+        messages: options.messages,
+        temperature: options.temperature ?? settings.temperature ?? 0.5,
+        maxTokens: options.maxTokens,
+        signal: options.signal
+          ? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS), options.signal])
+          : AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      },
+      onEvent,
+    );
+  }
+
   const llm = ctx.get?.('llm');
   if (!llm || typeof llm.stream !== 'function') {
     return { ok: false, error: 'LLM 服务不可用' };

@@ -5,6 +5,24 @@
  * 失败时把原因原样带回前端（"模型不可用""超时"），不伪造内容。
  */
 import { complete, streamText } from './llm.js';
+import { getCachedSettings, readSettings } from './settings.js';
+
+/**
+ * 拼出最终 system prompt：内置规则 + 用户在插件设置里写的角色设定与补充要求。
+ * 内置规则不能被覆盖 —— 里面含"只用摘录、不要编数字、JSON 结构"这些硬约束。
+ *
+ * @param {string} base 内置规则
+ * @param {'chat'|'core'|'compare'} surface 场景
+ */
+async function composeSystem(base, surface) {
+  const settings = await readSettings().catch(() => getCachedSettings());
+  const parts = [base];
+  const persona = String(settings?.persona ?? '').trim();
+  if (persona.length > 0) parts.push(`角色设定（用户指定，不违反上面的规则）：${persona}`);
+  const extra = String(settings?.prompts?.[surface] ?? '').trim();
+  if (extra.length > 0) parts.push(`这个场景的补充要求：${extra}`);
+  return parts.join('\n\n');
+}
 
 
 /**
@@ -138,14 +156,14 @@ function historyMessages(history, limit = 8) {
 export async function askAboutBlock(ctx, paper, blockId, history, message, options = {}) {
   const block = (paper.blocks ?? []).find((item) => item.id === blockId);
   if (!block) return { ok: false, error: '找不到这个节点' };
-  const system = [
+  const system = await composeSystem([
     '你是论文阅读助教，只回答与当前节点有关的问题。',
     '回答要求：简体中文；先给结论再给依据；涉及公式时用 LaTeX 行内写法 $...$；不超过 400 字；',
     '回答必须以"论文原文摘录"为依据：摘录里没有的具体数值、超参数、指标数字或结论，',
     '直接说"给出的摘录里没有这个数字/这一点"，然后说明需要打开原文核对；绝对不要凭印象补一个数字。',
     '论文没写的内容要明确说"论文没提"。',
     '提到符号或公式时用 $...$ 包成行内公式（例如 $\\mathbf{z}_u^{final}$），不要裸写 LaTeX 命令。',
-  ].join('\n');
+  ].join('\n'), 'chat');
   /** 按摘录预算拼一次提问。 */
   const buildPrompt = (budget) => {
     const excerpts = retrieveExcerpts(paper, `${block.title ?? ''} ${String(message ?? '')}`, budget);
@@ -276,11 +294,11 @@ export async function buildCore(ctx, paper) {
  */
 export async function compareChat(ctx, papers, history, message, options = {}) {
   if (!Array.isArray(papers) || papers.length === 0) return { ok: false, error: '没有选中任何论文' };
-  const system = [
+  const system = await composeSystem([
     '你在带一个论文对比研讨。用户会把几篇论文放在一起比较。',
     '回答要求：简体中文；先给一句话结论，再分点说差异；差异要落到具体机制、假设、损失函数或指标上，不要泛泛而谈；',
     '需要点名论文时用《标题》的形式；用户没问到的论文不要强行拉扯；不超过 600 字。',
-  ].join('\n');
+  ].join('\n'), 'compare');
   const dossiers = papers
     .map((paper) => {
       const blocks = paper.blocks ?? [];
@@ -329,14 +347,14 @@ export async function compareChat(ctx, papers, history, message, options = {}) {
 export async function askAboutBlockStream(ctx, paper, blockId, history, message, options = {}) {
   const block = (paper.blocks ?? []).find((item) => item.id === blockId);
   if (!block) return { ok: false, error: '找不到这个节点' };
-  const system = [
+  const system = await composeSystem([
     '你是论文阅读助教，只回答与当前节点有关的问题。',
     '回答要求：简体中文；先给结论再给依据；涉及公式时用 LaTeX 行内写法 $...$；不超过 400 字；',
     '回答必须以"论文原文摘录"为依据：摘录里没有的具体数值、超参数、指标数字或结论，',
     '直接说"给出的摘录里没有这个数字/这一点"，然后说明需要打开原文核对；绝对不要凭印象补一个数字。',
     '论文没写的内容要明确说"论文没提"。',
     '提到符号或公式时用 $...$ 包成行内公式（例如 $\\mathbf{z}_u^{final}$），不要裸写 LaTeX 命令。',
-  ].join('\n');
+  ].join('\n'), 'chat');
   const excerpts = retrieveExcerpts(paper, `${block.title ?? ''} ${String(message ?? '')}`, 7000);
   const prompt = [
     paperContext(paper),
@@ -375,18 +393,18 @@ export async function compareChatStream(ctx, papers, history, message, options =
   if (!Array.isArray(papers) || papers.length === 0) return { ok: false, error: '没有选中任何论文' };
   const single = papers.length === 1;
   const system = single
-    ? [
+    ? await composeSystem([
         '你在和用户讨论一篇论文，只回答与这篇论文有关的问题。',
         '回答要求：简体中文；先给结论再给依据；落到具体机制、公式或指标上，不要泛泛而谈；',
         '给出的材料里没有的数值或结论，直接说"给出的材料里没有这一点"，不要凭印象补；',
         '提到符号或公式时用 $...$ 包成行内公式，不要裸写 LaTeX 命令；不超过 500 字。',
-      ].join('\n')
-    : [
+      ].join('\n'), 'compare')
+    : await composeSystem([
         '你在带一个论文对比研讨。用户会把几篇论文放在一起比较。',
         '回答要求：简体中文；先给一句话结论，再分点说差异；差异要落到具体机制、假设、损失函数或指标上，不要泛泛而谈；',
         '需要点名论文时用《标题》的形式；用户没问到的论文不要强行拉扯；不超过 600 字。',
         '提到符号或公式时用 $...$ 包成行内公式，不要裸写 LaTeX 命令。',
-      ].join('\n');
+      ].join('\n'), 'compare');
   const dossiers = papers
     .map((paper) => {
       const blocks = paper.blocks ?? [];

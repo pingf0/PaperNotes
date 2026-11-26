@@ -174,6 +174,9 @@ export const api = {
       }
     }
   },
+  getSettings: () => request('/settings'),
+  saveSettings: (patch) => request('/settings', { method: 'POST', body: patch }),
+  testSettings: (config) => request('/settings/test', { method: 'POST', body: config }),
   reanalyze: (id) => request('/paper/reanalyze', { method: 'POST', body: { id } }),
   replaceFigures: (id, figures) => request('/paper/figures', { method: 'POST', body: { id, figures } }),
   uploadFigure: (id, dataUrl, caption) => request('/paper/figure', { method: 'POST', body: { id, dataUrl, caption } }),
