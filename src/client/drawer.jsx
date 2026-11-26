@@ -6,6 +6,7 @@
 import { React } from './runtime.js';
 import { api } from './api.js';
 import { Icon, Markdown, Spinner, useEnterGuard } from './ui.jsx';
+import { paragraphize } from './paragraphs.js';
 import { PdfPanel } from './pdf-viewer.jsx';
 
 /**
@@ -270,7 +271,9 @@ export function Drawer({ paper, selectedBlockId, tab, setTab, onUpdate, onSelect
             React.createElement(
               'div',
               { key: index, className: `pd-msg ${message.role === 'user' ? 'pd-msg-user' : 'pd-msg-ai'}` },
-              message.role === 'user' ? message.content : React.createElement(Markdown, { text: message.content }),
+              message.role === 'user'
+                ? message.content
+                : React.createElement(Markdown, { text: paragraphize(message.content) }),
               React.createElement(
                 'button',
                 {

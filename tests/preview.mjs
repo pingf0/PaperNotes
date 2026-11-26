@@ -367,6 +367,9 @@ if (!fontLoaded) errors.push('KaTeX 字体没加载（公式会用系统衬线�
 const figCapTexts = await page.locator('.pd-fig-cap').allInnerTexts();
 if (!figCapTexts.some((text) => text.includes('§'))) errors.push('节点上的图没有标板块：' + figCapTexts.join(' | ').slice(0, 80));
 if (!figCapTexts.some((text) => /Figure\s*\d/.test(text))) errors.push('图注标签里没有 Figure/Table 编号：' + figCapTexts.join(' | ').slice(0, 80));
+// 板块里的解释文字要分段（用户反馈"一大段太长"）
+const textParagraphs = await page.locator('.pd-node-text p').count();
+if (textParagraphs < 2) errors.push(`节点正文没有分段：只有 ${textParagraphs} 段`);
 const metaTexts = await page.locator('.pd-node-meta').allInnerTexts();
 if (!metaTexts.some((text) => text.includes('§3.2 Method'))) errors.push('公式节点没有标所在章节：' + metaTexts.join(' | ').slice(0, 80));
 // 公式要说明"作用在原理图的哪一部分"，并能一键看图

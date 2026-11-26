@@ -7,6 +7,7 @@
 import { React } from './runtime.js';
 import { api, assetUrl } from './api.js';
 import { figureLabel, figureName } from './figure-meta.js';
+import { paragraphize } from './paragraphs.js';
 import { Drawer } from './drawer.jsx';
 import { Formula, Icon, Lightbox, Markdown, Modal, Spinner } from './ui.jsx';
 
@@ -950,7 +951,8 @@ export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAut
               ? React.createElement(
                   'div',
                   { className: 'pd-node-text pd-md-host' },
-                  React.createElement(Markdown, { text: block.text }),
+                  // 模型常把 5-10 句塞进一段：渲染前折成短段落（已经分过段的不动）
+                  React.createElement(Markdown, { text: paragraphize(block.text) }),
                 )
               : null,
             figure

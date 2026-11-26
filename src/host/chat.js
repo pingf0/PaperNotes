@@ -7,6 +7,10 @@
 import { complete, streamText } from './llm.js';
 import { getCachedSettings, readSettings } from './settings.js';
 
+/** 排版要求：用户反馈"一大段太长"，统一要求短段落 / 列表。 */
+const FORMAT_RULE =
+  '排版要求：用短段落，每段 1-3 句、段与段之间空一行；有三点以上就用有序列表（1. 2. 3.）；不要把整段答案写成一大坨。';
+
 /**
  * 拼出最终 system prompt：内置规则 + 用户在插件设置里写的角色设定与补充要求。
  * 内置规则不能被覆盖 —— 里面含"只用摘录、不要编数字、JSON 结构"这些硬约束。
@@ -163,6 +167,7 @@ export async function askAboutBlock(ctx, paper, blockId, history, message, optio
     '直接说"给出的摘录里没有这个数字/这一点"，然后说明需要打开原文核对；绝对不要凭印象补一个数字。',
     '论文没写的内容要明确说"论文没提"。',
     '提到符号或公式时用 $...$ 包成行内公式（例如 $\\mathbf{z}_u^{final}$），不要裸写 LaTeX 命令。',
+    FORMAT_RULE,
   ].join('\n'), 'chat');
   /** 按摘录预算拼一次提问。 */
   const buildPrompt = (budget) => {
@@ -270,6 +275,7 @@ export async function buildCore(ctx, paper) {
     '## 我没想通的地方',
     '## 下次复习先看这三件事',
     '要求：简体中文；只写论文与用户记录里有的东西，不要引入外部知识；"我没想通的地方"从提问里推断，措辞用第一人称。',
+    FORMAT_RULE,
   ].join('\n');
   const prompt = [
     paperContext(paper),
@@ -298,6 +304,7 @@ export async function compareChat(ctx, papers, history, message, options = {}) {
     '你在带一个论文对比研讨。用户会把几篇论文放在一起比较。',
     '回答要求：简体中文；先给一句话结论，再分点说差异；差异要落到具体机制、假设、损失函数或指标上，不要泛泛而谈；',
     '需要点名论文时用《标题》的形式；用户没问到的论文不要强行拉扯；不超过 600 字。',
+    FORMAT_RULE,
   ].join('\n'), 'compare');
   const dossiers = papers
     .map((paper) => {
@@ -354,6 +361,7 @@ export async function askAboutBlockStream(ctx, paper, blockId, history, message,
     '直接说"给出的摘录里没有这个数字/这一点"，然后说明需要打开原文核对；绝对不要凭印象补一个数字。',
     '论文没写的内容要明确说"论文没提"。',
     '提到符号或公式时用 $...$ 包成行内公式（例如 $\\mathbf{z}_u^{final}$），不要裸写 LaTeX 命令。',
+    FORMAT_RULE,
   ].join('\n'), 'chat');
   const excerpts = retrieveExcerpts(paper, `${block.title ?? ''} ${String(message ?? '')}`, 7000);
   const prompt = [
