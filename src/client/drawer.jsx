@@ -31,6 +31,10 @@ export function Drawer({ paper, selectedBlockId, tab, setTab, onUpdate, onSelect
   const [streaming, setStreaming] = useState(null);
   /** 原文页签的「框选配图」是否开启。 */
   const [picking, setPicking] = useState(false);
+  // 切走页签时退出框选：留在开着的状态会让文本层一直隐藏，看起来像"文字选不了"
+  useEffect(() => {
+    if (tab !== 'pdf' && picking) setPicking(false);
+  }, [tab, picking]);
   const [thinkingOpen, setThinkingOpen] = useState(true);
   /** 刚复制过哪条消息（用于显示"已复制"）。 */
   const [copiedKey, setCopiedKey] = useState(null);

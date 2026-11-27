@@ -621,8 +621,14 @@ if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段
     };
     const first = spans.find((span) => span.textContent.trim().length > 8 && inView(span));
     if (!first) return null;
-    const top = first.getBoundingClientRect().top;
-    const line = spans.filter((span) => Math.abs(span.getBoundingClientRect().top - top) < 2 && inView(span));
+    const firstBox = first.getBoundingClientRect();
+    // 只在同一栏里取行：双栏页面里同一 y 的文字可能来自另一栏，混在一起就验不准
+    const sameColumn = (box) => box.left < firstBox.right + 60;
+    const line = spans.filter((span) => {
+      if (!inView(span)) return false;
+      const box = span.getBoundingClientRect();
+      return Math.abs(box.top - firstBox.top) < 2 && sameColumn(box);
+    });
     if (line.length === 0) return null;
     const a = line[0].getBoundingClientRect();
     const b = line[line.length - 1].getBoundingClientRect();

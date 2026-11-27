@@ -538,11 +538,11 @@ export const CSS = `
 /* 文本层：透明文字盖在画布上，负责选择与划词；框选模式下不拦事件 */
 .pd-text-layer {
   position: absolute; inset: 0; overflow: hidden; line-height: 1; z-index: 2;
-  user-select: text; -webkit-user-select: text; cursor: text;
+  user-select: text; -webkit-user-select: text; cursor: text; pointer-events: auto;
 }
 .pd-text-layer span {
   position: absolute; color: transparent; white-space: pre; overflow: hidden;
-  cursor: text; contain: layout style;
+  cursor: text; user-select: text; -webkit-user-select: text;
 }
 .pd-text-layer ::selection { background: rgba(47, 111, 208, .28); }
 .pd-pdf-page.is-picking .pd-text-layer { display: none; }

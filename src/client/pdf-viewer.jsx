@@ -183,6 +183,7 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
     {
       ref: holderRef,
       className: `pd-pdf-page${onPickBox ? ' is-picking' : ''}`,
+      'data-text-spans': textSpans.length,
       style: { width, height: Math.max(40, Math.round(width * ratio)) },
       onMouseDown: (event) => {
         if (!onPickBox || event.button !== 0) return;
