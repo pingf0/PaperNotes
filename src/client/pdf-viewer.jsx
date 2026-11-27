@@ -29,6 +29,77 @@ function clampZoom(value) {
 }
 
 /**
+ * 按"视觉顺序"把选区里的文字拼回来。
+ *
+ * 浏览器给的是 DOM 顺序，双栏/上下标混排时会跳来跳去（复制的文本和看到的不一致）。
+ * 这里改成：取选区矩形 → 找出与它相交的文本块 → 按先上后下、同一行内从左到右排序 →
+ * 相邻两块有明显间隙时补一个空格。
+ *
+ * @param {Element} wrap .pd-pdf-wrap
+ * @param {Range} range 当前选区
+ * @returns {string}
+ */
+function collectSelectionText(wrap, range) {
+  const rect = range.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return '';
+  const spans = [...wrap.querySelectorAll('.pd-text-layer span')];
+  const hits = [];
+  for (const span of spans) {
+    const box = span.getBoundingClientRect();
+    if (box.bottom < rect.top - 2 || box.top > rect.bottom + 2) continue;
+    if (box.right < rect.left - 2 || box.left > rect.right + 2) continue;
+    const text = String(span.textContent ?? '');
+    if (text.trim().length === 0) continue;
+    hits.push({ box, text, size: box.height });
+  }
+  if (hits.length === 0) return '';
+  hits.sort((a, b) => (Math.abs(a.box.top - b.box.top) > 4 ? a.box.top - b.box.top : a.box.left - b.box.left));
+  let out = '';
+  let prev = null;
+  for (const hit of hits) {
+    if (prev) {
+      const sameLine = Math.abs(prev.box.top - hit.box.top) <= 4;
+      const gap = hit.box.left - prev.box.right;
+      if (!sameLine) out += ' ';
+      else if (gap > hit.size * 0.22) out += ' ';
+    }
+    out += hit.text;
+    prev = hit;
+  }
+  return out.replace(/[\u200b-\u200d\ufeff]/g, '').replace(/[ \t]+/g, ' ').trim();
+}
+
+/**
+ * 写剪贴板：优先 async clipboard，失败退回隐藏 textarea + execCommand。
+ * Electron 里 clipboard API 常被权限挡住，没有兜底就会"看起来复制了但其实没写"。
+ * @param {string} text 要复制的文本
+ * @returns {Promise<boolean>} 是否成功
+ */
+async function copyText(text) {
+  const value = String(text ?? '');
+  if (value.length === 0) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    try {
+      const area = document.createElement('textarea');
+      area.value = value;
+      area.style.position = 'fixed';
+      area.style.top = '-1000px';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand('copy');
+      area.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
  * 两个 6 元仿射矩阵相乘（等价 pdf.js 的 Util.transform）。
  * @param {number[]} m1 外层变换
  * @param {number[]} m2 内层变换
@@ -293,7 +364,10 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
     const onUp = () => {
       window.setTimeout(() => {
         const sel = window.getSelection?.();
-        const text = String(sel?.toString() ?? '').trim();
+        const text = String(sel?.toString() ?? '')
+          .replace(/[\u200b-\u200d\ufeff]/g, '')
+          .replace(/[ \t]+/g, ' ')
+          .trim();
         const wrap = document.querySelector('.pd-pdf-wrap');
         if (!wrap || !sel || text.length === 0 || sel.rangeCount === 0) {
           setSelection(null);
@@ -301,6 +375,8 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
         }
         if (!wrap.contains(sel.anchorNode)) return;
         const range = sel.getRangeAt(0);
+        const visual = collectSelectionText(wrap, range);
+        const text2 = visual.length > 0 ? visual : text;
         const box = range.getBoundingClientRect();
         const wrapBox = wrap.getBoundingClientRect();
         if (box.width === 0 && box.height === 0) return;
@@ -308,7 +384,7 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
         const half = 92;
         const desired = box.left - wrapBox.left + box.width / 2;
         setSelection({
-          text,
+          text: text2,
           x: Math.min(Math.max(half, desired), Math.max(half, wrapBox.width - half)),
           y: Math.max(8, box.top - wrapBox.top - 44),
         });
@@ -316,7 +392,8 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
       }, 10);
     };
     const onDown = (event) => {
-      if (!event.target.closest?.('.pd-selection-bar')) setSelection(null);
+      // 点工具条内部不能把自己关掉：否则 mousedown 先卸载按钮，click 根本不会触发
+      if (!event.target.closest?.('.pd-selection-pop, .pd-selection-bar')) setSelection(null);
     };
     document.addEventListener('mouseup', onUp);
     document.addEventListener('mousedown', onDown);

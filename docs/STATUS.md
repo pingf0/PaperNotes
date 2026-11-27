@@ -924,6 +924,27 @@ bbox 是整页 612×792），所以"用 XObject bbox 精确框定图"这条路�
 - 文本层与 span 补上 `pointer-events: auto` / `-webkit-user-select: text`；
 - 每个页面元素上加 `data-text-spans` 计数，便于排查"这一页到底铺没铺文字"。
 
+## 0.16.3：复制拿到截图/弹窗闪断/工具条文本不对
+
+三个症状同一个根因链：
+
+1. **点「复制」窗口闪断** —— 关闭逻辑里判断的是旧类名 `.pd-selection-bar`，而工具条早改成了 `.pd-selection-pop`。
+   于是**在工具条上按下鼠标就把选区清了**，React 立刻卸载按钮，`click` 根本没触发 → 弹窗消失（闪断）。
+2. **复制出来是截图** —— 上一个 bug 导致 `selection.text` 在点击时已经不存在，`writeText('')` 失败/无操作，
+   剪贴板里还是上一次复制的内容（你之前截的图）。
+3. **工具条里文本不对** —— 用的是浏览器 `getSelection()` 的 **DOM 顺序**，双栏 + 上下标混排时会跳序
+   （看到一行、复制出来却是别处的字）。
+
+修法：
+
+- 关闭判断改成 `.pd-selection-pop, .pd-selection-bar`，点工具条内部不再自我卸载；
+- 复制加兜底：`clipboard.writeText` 失败时退回 `textarea + execCommand('copy')`（Electron 常见）；
+- 新增 `collectSelectionText()`：取选区矩形 → 找相交的文本块 → **按先上后下、行内从左到右**重排，
+  相邻块间隙大于 0.22 字宽时补空格 —— 这样工具条展示和复制的内容都按"你看到的顺序"拼。
+
+验证：预览台用真实鼠标在**用户的 WeaveRec PDF** 上拖选，断言工具条文本包含该行首个词、且拦截
+`navigator.clipboard.writeText` 后点「复制」能拿到同一段文字（之前这条断言根本过不了）。
+
 ## 当前安装版本
 
 `dsh-paper-desk@0.14.6`（generation `…+0.14.6+f784aa1b2ce8`，2026-11-27 02:2x 装入）。

@@ -660,8 +660,36 @@ if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段
       }, { x: rects.x1, y: rects.y1 });
       errors.push('鼠标拖选没有选中任何文字 ' + JSON.stringify({ diag, point: [Math.round(rects.x1), Math.round(rects.y1)] }));
     }
-    else if (picked !== rects.expected.trim() && !picked.startsWith(rects.expected.slice(0, 6))) {
-      errors.push(`拖选文本与预期不符：选中「${picked.slice(0, 30)}」预期「${rects.expected.slice(0, 30)}」`);
+    // 工具条里展示的应该是"按视觉顺序拼回来"的文本（DOM 顺序在双栏/上下标里会跳）
+    const preview = (await page.locator('.pd-selection-preview').innerText().catch(() => '')).trim();
+    if (preview.length === 0) errors.push('划词工具条没有展示选中文本');
+    const firstToken = rects.expected.slice(0, 3);
+    if (preview.length > 0 && !preview.includes(firstToken)) {
+      errors.push(`工具条文本与选中的行对不上：「${preview.slice(0, 24)}」 vs 「${rects.expected.slice(0, 24)}」`);
+    }
+    // 复制：必须真的把文本写进剪贴板（之前 mousedown 把按钮卸载，复制的还是上一次的内容/截图）
+    if (preview.length > 0) {
+      await page.evaluate(() => {
+        window.__copied = null;
+        const original = navigator.clipboard?.writeText?.bind(navigator.clipboard);
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText = async (value) => {
+            window.__copied = value;
+            if (original) return original(value);
+            return undefined;
+          };
+        }
+      });
+      const copyBtn = page.locator('.pd-selection-pop button', { hasText: '复制' }).first();
+      if ((await copyBtn.count()) > 0) {
+        await copyBtn.click();
+        await page.waitForTimeout(250);
+        const copied = await page.evaluate(() => window.__copied);
+        if (!copied || String(copied).trim().length === 0) errors.push('点复制没有把文本写进剪贴板');
+        else if (!String(copied).includes(firstToken)) errors.push(`复制的内容不对：「${String(copied).slice(0, 24)}」`);
+      } else {
+        errors.push('划词工具条上没有「复制」按钮');
+      }
     }
     await shot('04a1-text-selection');
   }
