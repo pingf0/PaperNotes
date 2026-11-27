@@ -610,12 +610,13 @@ if (textLayerDisplay === 'none') errors.push('文本层被 display:none 藏掉�
 const textSpans = await page.locator('.pd-text-layer span').count();
 if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段`);
 
-// 真实鼠标拖选：在一行文字上从行首拖到行尾，选区内容应当就是这一行的文字
+// 拖选：文本层是我们自己按文字块命中实现的（不依赖浏览器 user-select）
 {
-  // 如果之前进过框选模式，先退出来（框选时文本层不接收指针事件）
-  if ((await page.locator('.pd-pdf-page.is-picking').count()) > 0) {
-    await page.locator('.pd-pdf-tools button', { hasText: /框选中/ }).click().catch(() => undefined);
-    await page.waitForTimeout(200);
+  // 先把可能还开着的工具条关掉，否则它盖住页面
+  const closeBtn = page.locator('.pd-selection-pop button', { hasText: '关闭' });
+  if ((await closeBtn.count()) > 0) {
+    await closeBtn.first().click();
+    await page.waitForTimeout(150);
   }
   const rects = await page.evaluate(() => {
     const spans = [...document.querySelectorAll('.pd-text-layer span')];
@@ -624,16 +625,15 @@ if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段
       if (!scroll) return false;
       const box = span.getBoundingClientRect();
       return (
-        box.top > scroll.top + 10 &&
-        box.bottom < scroll.bottom - 10 &&
-        box.left > scroll.left + 10 &&
-        box.right < scroll.right - 10
+        box.top > scroll.top + 12 &&
+        box.bottom < scroll.bottom - 12 &&
+        box.left > scroll.left + 12 &&
+        box.right < scroll.right - 12
       );
     };
     const first = spans.find((span) => span.textContent.trim().length > 8 && inView(span));
     if (!first) return null;
     const firstBox = first.getBoundingClientRect();
-    // 只在同一栏里取行：双栏页面里同一 y 的文字可能来自另一栏，混在一起就验不准
     const sameColumn = (box) => box.left < firstBox.right + 60;
     const line = spans.filter((span) => {
       if (!inView(span)) return false;
@@ -644,67 +644,30 @@ if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段
     const a = line[0].getBoundingClientRect();
     const b = line[line.length - 1].getBoundingClientRect();
     return {
-      x1: a.left + 1,
+      x1: a.left + 2,
       y1: a.top + a.height / 2,
-      x2: b.right - 1,
+      x2: b.right - 2,
       y2: b.top + b.height / 2,
       expected: line.map((span) => span.textContent).join(''),
     };
   });
   if (!rects) {
-    const diag = await page.evaluate(() => {
-      const all = [...document.querySelectorAll('.pd-text-layer span')];
-      const scroll = document.querySelector('.pd-pdf-scroll')?.getBoundingClientRect();
-      const boxes = all.slice(0, 5).map((span) => {
-        const box = span.getBoundingClientRect();
-        return [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)];
-      });
-      return {
-        spans: all.length,
-        scroll: scroll ? [Math.round(scroll.left), Math.round(scroll.top), Math.round(scroll.right), Math.round(scroll.bottom)] : null,
-        boxes,
-        missing: document.querySelectorAll('.pd-text-missing').length,
-        chain: (() => {
-          const span = all[0];
-          if (!span) return null;
-          const out = [];
-          let node = span;
-          for (let i = 0; i < 3 && node; i += 1) {
-            const cs = getComputedStyle(node);
-            out.push({ cls: node.className, display: cs.display, w: cs.width, h: cs.height, zoom: cs.zoom });
-            node = node.parentElement;
-          }
-          return out;
-        })(),
-      };
-    });
-    errors.push('页面上没有找到可视的文字行，无法验证拖选 ' + JSON.stringify(diag));
+    errors.push('页面上没有找到可视的文字行，无法验证拖选');
   } else {
     await page.mouse.move(rects.x1, rects.y1);
     await page.mouse.down();
     await page.mouse.move(rects.x2, rects.y2, { steps: 12 });
     await page.mouse.up();
-    await page.waitForTimeout(250);
-    const picked = await page.evaluate(() => String(window.getSelection()?.toString() ?? '').trim());
-    if (picked.length === 0) {
-      const diag = await page.evaluate((point) => {
-        const el = document.elementFromPoint(point.x, point.y);
-        return {
-          hit: el ? `${el.tagName}.${String(el.className).slice(0, 30)}` : 'none',
-          inLayer: el ? Boolean(el.closest('.pd-text-layer')) : false,
-          userSelectLayer: getComputedStyle(document.querySelector('.pd-text-layer') ?? document.body).userSelect,
-        };
-      }, { x: rects.x1, y: rects.y1 });
-      errors.push('鼠标拖选没有选中任何文字 ' + JSON.stringify({ diag, point: [Math.round(rects.x1), Math.round(rects.y1)] }));
-    }
-    // 工具条里展示的应该是"按视觉顺序拼回来"的文本（DOM 顺序在双栏/上下标里会跳）
+    await page.waitForTimeout(300);
+    const highlighted = await page.locator('.pd-pick-box').count();
+    if (highlighted === 0) errors.push('拖选没有产生任何高亮（命中失败）');
     const preview = (await page.locator('.pd-selection-preview').innerText().catch(() => '')).trim();
     if (preview.length === 0) errors.push('划词工具条没有展示选中文本');
     const firstToken = rects.expected.slice(0, 3);
     if (preview.length > 0 && !preview.includes(firstToken)) {
       errors.push(`工具条文本与选中的行对不上：「${preview.slice(0, 24)}」 vs 「${rects.expected.slice(0, 24)}」`);
     }
-    // 复制：必须真的把文本写进剪贴板（之前 mousedown 把按钮卸载，复制的还是上一次的内容/截图）
+    await shot('04a1-text-selection');
     if (preview.length > 0) {
       await page.evaluate(() => {
         window.__copied = null;
@@ -728,40 +691,9 @@ if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段
         errors.push('划词工具条上没有「复制」按钮');
       }
     }
-    await shot('04a1-text-selection');
   }
 }
 
-// 划词工具条：手动选中一段文字后应出现「问这段 / 翻译」
-if (textSpans > 0) {
-  await page.evaluate(() => {
-    const spans = [...document.querySelectorAll('.pd-text-layer span')].slice(0, 3);
-    const range = document.createRange();
-    range.setStart(spans[0].firstChild, 0);
-    range.setEnd(spans[spans.length - 1].firstChild, spans[spans.length - 1].textContent.length);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-  });
-  await page.waitForTimeout(250);
-  const bar = await page.locator('.pd-selection-pop').count();
-  if (bar > 0) {
-    const previewText = await page.locator('.pd-selection-preview').innerText().catch(() => '');
-    if (previewText.trim().length === 0) errors.push('划词工具条里没有预览文本');
-  }
-  if (bar === 0) {
-    const diag = await page.evaluate(() => ({
-      selLen: String(window.getSelection()?.toString() ?? '').trim().length,
-      wrap: Boolean(document.querySelector('.pd-pdf-wrap')),
-      anchorInWrap: Boolean(
-        document.querySelector('.pd-pdf-wrap')?.contains(window.getSelection()?.anchorNode ?? null),
-      ),
-      layers: document.querySelectorAll('.pd-text-layer').length,
-    }));
-    errors.push('划词后没有出现「问这段」工具条：' + JSON.stringify(diag));
-  }
-}
 // 缩放后切走再回来：缩放与页码要记住
 const zoomedWidth = await page.locator('.pd-pdf-page').first().evaluate((el) => el.getBoundingClientRect().width);
 await page.waitForTimeout(500);

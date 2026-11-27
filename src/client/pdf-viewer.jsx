@@ -133,7 +133,7 @@ function multiplyMatrix(m1, m2) {
  * 传了 onPickBox 时进入"框选"模式：按住拖出矩形，松开就把这一块裁成高清图交出去。
  * @param {{ doc: object, index: number, ratio: number, width: number }} props
  */
-function PdfPage({ doc, index, ratio, width, onPickBox }) {
+function PdfPage({ doc, index, ratio, width, onPickBox, onSelectText }) {
   const { useEffect, useRef, useState } = React;
   const holderRef = useRef(null);
   const canvasRef = useRef(null);
@@ -141,6 +141,10 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
   const [box, setBox] = useState(null);
   /** 文本层的每一段（透明文字，用于选择 / 复制 / 划词提问）。 */
   const [textSpans, setTextSpans] = useState([]);
+  /** 自己算出来的选区（页内 CSS 坐标）：{ x1,y1,x2,y2 } */
+  const [drag, setDrag] = useState(null);
+  /** 被选中的文字块索引（用于画高亮） */
+  const [picked, setPicked] = useState([]);
   /** 'pending' | 'ok' | 'empty' | 'failed'：用来提示"这页没有可选文字" */
   const [textState, setTextState] = useState('pending');
   const dragRef = useRef(null);
@@ -227,6 +231,10 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
           spans.push({
             key: itemIndex,
             text: item.str,
+            left,
+            top,
+            width: spanWidth,
+            height: fontSize * 1.18,
             style: {
               left: `${left.toFixed(2)}px`,
               top: `${top.toFixed(2)}px`,
@@ -288,6 +296,87 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
       'data-text-spans': textSpans.length,
       style: { width, height: Math.max(40, Math.round(width * ratio)) },
       onMouseDown: (event) => {
+        if (!onPickBox && event.button === 0 && textSpans.length > 0) {
+          // 自己实现选择：不依赖浏览器的 user-select（Electron 缩放/自定义 CSS 下它经常不工作）
+          event.preventDefault();
+          const holder = holderRef.current;
+          const bounds = holder.getBoundingClientRect();
+          const scale = bounds.width / Math.max(1, width);
+          const local = {
+            x: Math.min(Math.max(0, (event.clientX - bounds.left) / scale), width),
+            y: Math.min(Math.max(0, (event.clientY - bounds.top) / scale), bounds.height / scale),
+          };
+          const current = { x1: local.x, y1: local.y, x2: local.x, y2: local.y };
+          setDrag(current);
+          setPicked([]);
+          const onMove = (move) => {
+            const x = Math.min(Math.max(0, (move.clientX - bounds.left) / scale), width);
+            const y = Math.min(Math.max(0, (move.clientY - bounds.top) / scale), bounds.height / scale);
+            current.x2 = x;
+            current.y2 = y;
+            setDrag({ ...current });
+          };
+          const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            setDrag(null);
+            const rect = {
+              left: Math.min(current.x1, current.x2),
+              right: Math.max(current.x1, current.x2),
+              top: Math.min(current.y1, current.y2),
+              bottom: Math.max(current.y1, current.y2),
+            };
+            // 点一下（没拖动）就选中这一点所在的文字块
+            const thin = rect.right - rect.left < 3 && rect.bottom - rect.top < 3;
+            const hits = textSpans
+              .map((span, position) => ({ span, position }))
+              .filter(({ span }) => {
+                if (thin) {
+                  return (
+                    span.left <= current.x1 &&
+                    span.left + span.width >= current.x1 &&
+                    span.top <= current.y1 &&
+                    span.top + span.height >= current.y1
+                  );
+                }
+                return (
+                  span.left < rect.right &&
+                  span.left + span.width > rect.left &&
+                  span.top < rect.bottom &&
+                  span.top + span.height > rect.top
+                );
+              })
+              .map(({ span }) => span);
+            if (hits.length === 0) {
+              setPicked([]);
+              onSelectText?.(null);
+              return;
+            }
+            // 按视觉顺序拼文本：先上后下、行内从左到右
+            const sorted = hits.slice().sort((a, b) => (Math.abs(a.top - b.top) > 4 ? a.top - b.top : a.left - b.left));
+            let text = '';
+            let prev = null;
+            for (const hit of sorted) {
+              if (prev) {
+                const sameLine = Math.abs(prev.top - hit.top) <= 4;
+                const gap = hit.left - (prev.left + prev.width);
+                if (!sameLine) text += ' ';
+                else if (gap > hit.height * 0.22) text += ' ';
+              }
+              text += hit.text;
+              prev = hit;
+            }
+            setPicked(sorted);
+            const first = sorted[0];
+            onSelectText?.({
+              text: text.replace(/[\u200b-\u200d\ufeff]/g, '').replace(/[ \t]+/g, ' ').trim(),
+              x: bounds.left + (first.left + first.width / 2) * scale,
+              y: bounds.top + first.top * scale - 8,
+            });
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp, { once: true });
+          return;
+        }
         if (!onPickBox || event.button !== 0) return;
         event.preventDefault();
         const holder = holderRef.current;
@@ -331,9 +420,38 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
     textSpans.length > 0
       ? React.createElement(
           'div',
-          { className: 'pd-text-layer' },
+          { className: 'pd-text-layer', 'aria-hidden': 'true' },
           ...textSpans.map((span) => React.createElement('span', { key: span.key, style: span.style }, span.text)),
         )
+      : null,
+    picked.length > 0
+      ? React.createElement(
+          'div',
+          { className: 'pd-pick-layer' },
+          ...picked.map((span, position) =>
+            React.createElement('span', {
+              key: `pick-${position}`,
+              className: 'pd-pick-box',
+              style: {
+                left: `${span.left}px`,
+                top: `${span.top}px`,
+                width: `${span.width}px`,
+                height: `${span.height}px`,
+              },
+            }),
+          ),
+        )
+      : null,
+    drag
+      ? React.createElement('div', {
+          className: 'pd-drag-box',
+          style: {
+            left: `${Math.min(drag.x1, drag.x2)}px`,
+            top: `${Math.min(drag.y1, drag.y2)}px`,
+            width: `${Math.abs(drag.x2 - drag.x1)}px`,
+            height: `${Math.abs(drag.y2 - drag.y1)}px`,
+          },
+        })
       : null,
     box
       ? React.createElement('div', {
@@ -397,49 +515,23 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
     };
   }, [paperId]);
 
-  /** 划词：松开鼠标时取选区，把工具条定位到选区上方。 */
-  useEffect(() => {
-    const onUp = () => {
-      window.setTimeout(() => {
-        const sel = window.getSelection?.();
-        const text = String(sel?.toString() ?? '')
-          .replace(/[\u200b-\u200d\ufeff]/g, '')
-          .replace(/[ \t]+/g, ' ')
-          .trim();
-        const wrap = document.querySelector('.pd-pdf-wrap');
-        if (!wrap || !sel || text.length === 0 || sel.rangeCount === 0) {
-          setSelection(null);
-          return;
-        }
-        if (!wrap.contains(sel.anchorNode)) return;
-        const range = sel.getRangeAt(0);
-        const visual = collectSelectionText(wrap, range);
-        const text2 = visual.length > 0 ? visual : text;
-        const box = range.getBoundingClientRect();
-        const wrapBox = wrap.getBoundingClientRect();
-        if (box.width === 0 && box.height === 0) return;
-        // 工具条居中在选区上方，并夹在面板内，避免被右边缘切掉
-        const half = 92;
-        const desired = box.left - wrapBox.left + box.width / 2;
-        setSelection({
-          text: text2,
-          x: Math.min(Math.max(half, desired), Math.max(half, wrapBox.width - half)),
-          y: Math.max(8, box.top - wrapBox.top - 44),
-        });
-
-      }, 10);
-    };
-    const onDown = (event) => {
-      // 点工具条内部不能把自己关掉：否则 mousedown 先卸载按钮，click 根本不会触发
-      if (!event.target.closest?.('.pd-selection-pop, .pd-selection-bar')) setSelection(null);
-    };
-    document.addEventListener('mouseup', onUp);
-    document.addEventListener('mousedown', onDown);
-    return () => {
-      document.removeEventListener('mouseup', onUp);
-      document.removeEventListener('mousedown', onDown);
-    };
-  }, []);
+  /** 页面上选中文字后：把坐标换成相对 .pd-pdf-wrap 的位置，弹出工具条。 */
+  const handleSelectText = (payload) => {
+    if (!payload) {
+      setSelection(null);
+      return;
+    }
+    const wrap = scrollRef.current?.closest('.pd-pdf-wrap');
+    const wrapBox = wrap?.getBoundingClientRect();
+    if (!wrapBox) return;
+    const half = 92;
+    const desired = payload.x - wrapBox.left;
+    setSelection({
+      text: payload.text,
+      x: Math.min(Math.max(half, desired), Math.max(half, wrapBox.width - half)),
+      y: Math.max(8, payload.y - wrapBox.top),
+    });
+  };
 
   /** 跟踪容器宽度（右侧栏可拖宽）。 */
   useEffect(() => {
@@ -664,6 +756,7 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
                   ratio,
                   width: contentWidth,
                   onPickBox: picking ? onPickBox : undefined,
+                  onSelectText: handleSelectText,
                 }),
               ),
             ),

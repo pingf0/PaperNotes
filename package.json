@@ -1,6 +1,6 @@
 {
   "name": "dsh-paper-desk",
-  "version": "0.16.4",
+  "version": "0.17.0",
   "private": true,
   "description": "PaperNotes：把读过的论文拆成可拖拽的思维节点，逐块提问、记笔记、凝练成读后整理，并支持多论文对比。",
   "type": "module",

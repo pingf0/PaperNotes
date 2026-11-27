@@ -542,14 +542,20 @@ export const CSS = `
   background: rgba(0, 0, 0, .55); color: #fff; pointer-events: none;
 }
 .pd-text-layer {
+  /* 只用来承载文字（不可见、不接收事件）；选择逻辑由我们自己按文字块命中实现 */
   position: absolute; inset: 0; overflow: hidden; line-height: 1; z-index: 2;
-  user-select: text; -webkit-user-select: text; cursor: text; pointer-events: auto;
+  user-select: none; -webkit-user-select: none; pointer-events: none;
 }
 .pd-text-layer span {
   position: absolute; color: transparent; white-space: pre; overflow: hidden;
-  cursor: text; user-select: text; -webkit-user-select: text;
+  pointer-events: none;
 }
 .pd-text-layer ::selection { background: rgba(47, 111, 208, .28); }
+/* 自绘选区：命中的文字块画成半透明蓝底；拖动时给一个虚线框 */
+.pd-pick-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.pd-pick-box { position: absolute; background: rgba(47, 111, 208, .26); border-radius: 1px; }
+.pd-drag-box { position: absolute; z-index: 4; pointer-events: none; border: 1px dashed rgba(47, 111, 208, .8); background: rgba(47, 111, 208, .08); }
+.pd-pdf-page { user-select: none; -webkit-user-select: none; }
 .pd-pdf-page.is-picking .pd-text-layer { pointer-events: none; }
 /* 划词小工具条：预览一下选中的内容，再决定问/复制 */
 .pd-selection-pop {
