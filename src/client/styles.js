@@ -504,7 +504,8 @@ export const CSS = `
 @keyframes pd-spin { to { transform: rotate(360deg); } }
 
 /* 右侧栏里的连续 PDF 阅读器 */
-.pd-pdf-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.pd-pdf-wrap {
+  position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pd-pdf-tools {
   display: flex; align-items: center; gap: 4px; padding: 6px 10px; flex: none;
   border-bottom: 1px solid var(--dsw-alias-border-l1, #e6e6e6);
@@ -521,6 +522,25 @@ export const CSS = `
   box-shadow: 0 2px 10px rgba(10, 20, 40, .12); margin: 0 auto;
 }
 .pd-pdf-canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* 文本层：透明文字盖在画布上，负责选择与划词；框选模式下不拦事件 */
+.pd-text-layer {
+  position: absolute; inset: 0; overflow: hidden; line-height: 1; z-index: 2;
+  user-select: text; -webkit-user-select: text; cursor: text;
+}
+.pd-text-layer span {
+  position: absolute; color: transparent; white-space: pre; transform-origin: 0 0;
+  cursor: text;
+}
+.pd-text-layer ::selection { background: rgba(47, 111, 208, .28); }
+.pd-pdf-page.is-picking .pd-text-layer { display: none; }
+/* 划词提问的小工具条 */
+.pd-selection-bar {
+  position: absolute; z-index: 30; display: flex; gap: 4px; padding: 4px;
+  border-radius: 8px; background: var(--dsw-alias-bg-layer-2, #fff);
+  border: 1px solid var(--dsw-alias-border-l2, #dcdcdc);
+  box-shadow: 0 8px 22px rgba(16, 32, 56, .16);
+  animation: pd-pop .14s ease-out;
+}
 .pd-pdf-page.is-picking { cursor: crosshair; }
 .pd-pdf-page.is-picking .pd-pdf-canvas { pointer-events: none; }
 /* 框选框：PDF 页面永远是白底，所以固定用高对比的蓝，不跟主题走

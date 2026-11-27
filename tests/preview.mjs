@@ -600,6 +600,36 @@ const afterZoom = await page.locator('.pd-pdf-page').first().evaluate((el) => el
 if (!(afterZoom > beforeZoom * 1.1)) errors.push(`面板内放大没生效：${Math.round(beforeZoom)} → ${Math.round(afterZoom)}`);
 await shot('04a-pdf-zoom');
 
+// 文本层：页面里应该铺出可选择的透明文字
+const textSpans = await page.locator('.pd-text-layer span').count();
+if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段`);
+
+// 划词工具条：手动选中一段文字后应出现「问这段 / 翻译」
+if (textSpans > 0) {
+  await page.evaluate(() => {
+    const spans = [...document.querySelectorAll('.pd-text-layer span')].slice(0, 3);
+    const range = document.createRange();
+    range.setStart(spans[0].firstChild, 0);
+    range.setEnd(spans[spans.length - 1].firstChild, spans[spans.length - 1].textContent.length);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+  await page.waitForTimeout(250);
+  const bar = await page.locator('.pd-selection-bar').count();
+  if (bar === 0) {
+    const diag = await page.evaluate(() => ({
+      selLen: String(window.getSelection()?.toString() ?? '').trim().length,
+      wrap: Boolean(document.querySelector('.pd-pdf-wrap')),
+      anchorInWrap: Boolean(
+        document.querySelector('.pd-pdf-wrap')?.contains(window.getSelection()?.anchorNode ?? null),
+      ),
+      layers: document.querySelectorAll('.pd-text-layer').length,
+    }));
+    errors.push('划词后没有出现「问这段」工具条：' + JSON.stringify(diag));
+  }
+}
 await shot('04a-pdf-panel');
 // 框选配图：先选一个节点（框选结果要挂到它上面），再回原文页签框
 await page.click('.pd-node .pd-node-head');

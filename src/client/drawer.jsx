@@ -490,6 +490,12 @@ export function Drawer({ paper, selectedBlockId, tab, setTab, onUpdate, onSelect
                 }
                 setPicking((open) => !open);
               },
+              onAskSelection: (text) => {
+                // 划词提问：切回会话页签并预填（让用户还能改）
+                setTab('chat');
+                setDraft(`关于原文这段：\n\n${text}\n\n`);
+                window.setTimeout(() => composerRef.current?.focus(), 60);
+              },
               onPickBox: async (dataUrl, failure) => {
                 setPicking(false);
                 if (!dataUrl) {

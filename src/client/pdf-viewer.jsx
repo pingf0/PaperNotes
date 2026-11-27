@@ -29,6 +29,23 @@ function clampZoom(value) {
 }
 
 /**
+ * 两个 6 元仿射矩阵相乘（等价 pdf.js 的 Util.transform）。
+ * @param {number[]} m1 外层变换
+ * @param {number[]} m2 内层变换
+ * @returns {number[]} 合成矩阵
+ */
+function multiplyMatrix(m1, m2) {
+  return [
+    m1[0] * m2[0] + m1[2] * m2[1],
+    m1[1] * m2[0] + m1[3] * m2[1],
+    m1[0] * m2[2] + m1[2] * m2[3],
+    m1[1] * m2[2] + m1[3] * m2[3],
+    m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+    m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
+  ];
+}
+
+/**
  * 单页：占位 + 进入视口才渲染，离开就释放位图。
  *
  * 传了 onPickBox 时进入"框选"模式：按住拖出矩形，松开就把这一块裁成高清图交出去。
@@ -40,6 +57,8 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
   const canvasRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [box, setBox] = useState(null);
+  /** 文本层的每一段（透明文字，用于选择 / 复制 / 划词提问）。 */
+  const [textSpans, setTextSpans] = useState([]);
   const dragRef = useRef(null);
 
   /**
@@ -121,6 +140,31 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
         context.fillStyle = '#ffffff';
         context.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvasContext: context, viewport }).promise;
+        // 文本层：把每个文字片段按 PDF 坐标铺成透明 span，浏览器就能选词、复制、做划词提问
+        const textContent = await page.getTextContent();
+        if (cancelled) return;
+        const spans = [];
+        textContent.items.forEach((item, itemIndex) => {
+          if (!item.str || item.str.trim().length === 0) return;
+          const tr = multiplyMatrix(viewport.transform, item.transform);
+          const fontSize = Math.hypot(tr[2], tr[3]) || item.height * viewport.scale;
+          const left = tr[4];
+          const top = tr[5] - fontSize;
+          const targetWidth = item.width * viewport.scale;
+          const naturalWidth = fontSize * item.str.length * 0.5;
+          const scaleX = naturalWidth > 0 ? targetWidth / naturalWidth : 1;
+          spans.push({
+            key: itemIndex,
+            text: item.str,
+            style: {
+              left: `${left}px`,
+              top: `${top}px`,
+              fontSize: `${fontSize}px`,
+              transform: `scaleX(${scaleX})`,
+            },
+          });
+        });
+        if (!cancelled) setTextSpans(spans);
       } catch {
         /* 单页失败不影响其它页 */
       }
@@ -170,6 +214,13 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
       },
     },
     React.createElement('canvas', { ref: canvasRef, className: 'pd-pdf-canvas' }),
+    textSpans.length > 0
+      ? React.createElement(
+          'div',
+          { className: 'pd-text-layer' },
+          ...textSpans.map((span) => React.createElement('span', { key: span.key, style: span.style }, span.text)),
+        )
+      : null,
     box
       ? React.createElement('div', {
           className: 'pd-pdf-box',
@@ -183,7 +234,7 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
  * 连续的 PDF 阅读面板（放在右侧栏里）。
  * @param {{ paperId: string }} props
  */
-export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking }) {
+export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking, onAskSelection }) {
   const { useEffect, useRef, useState } = React;
   const [doc, setDoc] = useState(null);
   const [count, setCount] = useState(0);
@@ -194,6 +245,8 @@ export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking 
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef(null);
+  /** 划词结果：{ text, x, y }（相对 .pd-pdf-wrap） */
+  const [selection, setSelection] = useState(null);
   const zoomRef = useRef(1);
   const frameRef = useRef(0);
 
@@ -224,6 +277,43 @@ export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking 
       alive = false;
     };
   }, [paperId]);
+
+  /** 划词：松开鼠标时取选区，把工具条定位到选区上方。 */
+  useEffect(() => {
+    const onUp = () => {
+      window.setTimeout(() => {
+        const sel = window.getSelection?.();
+        const text = String(sel?.toString() ?? '').trim();
+        const wrap = document.querySelector('.pd-pdf-wrap');
+        if (!wrap || !sel || text.length === 0 || sel.rangeCount === 0) {
+          setSelection(null);
+          return;
+        }
+        if (!wrap.contains(sel.anchorNode)) return;
+        const range = sel.getRangeAt(0);
+        const box = range.getBoundingClientRect();
+        const wrapBox = wrap.getBoundingClientRect();
+        if (box.width === 0 && box.height === 0) return;
+        // 工具条居中在选区上方，并夹在面板内，避免被右边缘切掉
+        const half = 92;
+        const desired = box.left - wrapBox.left + box.width / 2;
+        setSelection({
+          text,
+          x: Math.min(Math.max(half, desired), Math.max(half, wrapBox.width - half)),
+          y: Math.max(8, box.top - wrapBox.top - 44),
+        });
+      }, 10);
+    };
+    const onDown = (event) => {
+      if (!event.target.closest?.('.pd-selection-bar')) setSelection(null);
+    };
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, []);
 
   /** 跟踪容器宽度（右侧栏可拖宽）。 */
   useEffect(() => {
@@ -300,9 +390,58 @@ export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking 
 
   const contentWidth = Math.round(baseWidth * zoom);
 
+  /** 划词后浮出的小工具条：问这段 / 翻译 / 复制。 */
+  const selectionBar = selection
+    ? React.createElement(
+        'div',
+        {
+          className: 'pd-selection-bar',
+          style: { left: selection.x, top: selection.y, transform: 'translateX(-50%)' },
+        },
+        React.createElement(
+          'button',
+          {
+            className: 'pd-btn pd-btn-sm pd-btn-primary',
+            onClick: () => {
+              onAskSelection?.(selection.text);
+              setSelection(null);
+            },
+          },
+          '问这段',
+        ),
+        React.createElement(
+          'button',
+          {
+            className: 'pd-btn pd-btn-sm',
+            onClick: () => {
+              onAskSelection?.(`把下面这段翻译成中文，并解释关键术语（公式保留）：\n\n${selection.text}`);
+              setSelection(null);
+            },
+          },
+          '翻译',
+        ),
+        React.createElement(
+          'button',
+          {
+            className: 'pd-btn pd-btn-sm pd-btn-ghost',
+            onClick: async () => {
+              try {
+                await navigator.clipboard.writeText(selection.text);
+              } catch {
+                /* 忽略 */
+              }
+              setSelection(null);
+            },
+          },
+          '复制',
+        ),
+      )
+    : null;
+
   return React.createElement(
     'div',
     { className: 'pd-pdf-wrap' },
+    selectionBar,
     React.createElement(
       'div',
       { className: 'pd-pdf-tools' },
