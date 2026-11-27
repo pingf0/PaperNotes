@@ -20,10 +20,12 @@ import {
   compareChat,
   compareChatStream,
   condenseNote,
+  translateSelection,
 } from './chat.js';
 import { reanalyzePaper, migrateAnnotations, structurePaper } from './import.js';
 import { maskSettings, readSettings, writeSettings } from './settings.js';
 import { testConnection } from './openai.js';
+import { fetchZoteroFile, listZoteroItems, pushZoteroNote, zoteroAuth, zoteroStatus } from './zotero.js';
 import { llmReady } from './llm.js';
 import {
   dataDir,
@@ -482,6 +484,51 @@ export function createServer(ctx, prefix) {
         } catch (error) {
           return sendJson(res, 400, { error: `读不了这个目录：${error instanceof Error ? error.message : String(error)}` });
         }
+      }
+
+      if (path === '/zotero/status' && method === 'GET') {
+        return sendJson(res, 200, await zoteroStatus());
+      }
+
+      if (path === '/zotero/items' && method === 'GET') {
+        try {
+          const items = await listZoteroItems({ q: query.get('q') ?? '', limit: query.get('limit') ?? 20 });
+          return sendJson(res, 200, { items });
+        } catch (error) {
+          return sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+
+      if (path === '/zotero/file' && method === 'GET') {
+        try {
+          const bytes = await fetchZoteroFile(query.get('key') ?? '');
+          res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': String(bytes.length) });
+          return res.end(Buffer.from(bytes));
+        } catch (error) {
+          return sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+
+      if (path === '/zotero/note' && method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        const doc = await readPaper(dir, body.id);
+        if (!doc) return sendJson(res, 404, { error: '论文不存在' });
+        const auth = await zoteroAuth();
+        try {
+          await pushZoteroNote(auth, String(body.itemKey ?? doc.zotero?.itemKey ?? ''), {
+            title: String(doc.title ?? 'PaperNotes'),
+            html: String(body.html ?? ''),
+          });
+          return sendJson(res, 200, { ok: true });
+        } catch (error) {
+          return sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+
+      if (path === '/translate' && method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        const result = await translateSelection(ctx, body.text, { model: body.model });
+        return sendJson(res, result.ok ? 200 : 502, result);
       }
 
       if (path === '/fs/pick-directory' && method === 'POST') {

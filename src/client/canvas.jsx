@@ -289,6 +289,41 @@ export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAut
   };
 
   /** 把当前视图（平移 + 缩放）落盘。 */
+  /** 把 core 核与笔记写成一条 note 回写到 Zotero（需要 paper.zotero.itemKey 与 Web API）。 */
+  const [pushing, setPushing] = useState(false);
+  const pushToZotero = async () => {
+    if (pushing) return;
+    setPushing(true);
+    setRecropNote(null);
+    try {
+      const esc = (text) =>
+        String(text ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\n/g, '<br>');
+      const parts = [];
+      if (paper.core?.text) parts.push(`<h2>core 核</h2><p>${esc(paper.core.text)}</p>`);
+      const notes = (paper.notes ?? []).filter((note) => String(note.text ?? '').trim().length > 0);
+      if (notes.length > 0) {
+        parts.push('<h2>笔记</h2>');
+        for (const note of notes) {
+          const where = note.blockId
+            ? (paper.blocks ?? []).find((block) => block.id === note.blockId)?.title ?? '节点'
+            : '整篇';
+          parts.push(`<p><strong>${esc(where)}</strong>：${esc(note.text)}</p>`);
+        }
+      }
+      if (parts.length === 0) throw new Error('还没有 core 或笔记，没什么可回写的');
+      await api.pushZoteroNote(paperId, paper.zotero?.itemKey, parts.join(''));
+      setRecropNote({ ok: true, text: '已回写到 Zotero（条目下多了一条 note）' });
+    } catch (e) {
+      setRecropNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setPushing(false);
+    }
+  };
+
   /** 重新分析：用已存的全文重跑结构化，换节点但把笔记与会话迁过去。 */
   const [reanalyzing, setReanalyzing] = useState(false);
   const reanalyze = async () => {
@@ -765,6 +800,18 @@ export function PaperView({ paperId, onClose, onChanged, autoTidy = false, onAut
       }, '聚焦所选'),
     ),
     React.createElement('button', { className: 'pd-btn pd-btn-ghost', onClick: addNode, title: '在画布上加一个自由节点' }, React.createElement(Icon, { name: 'plus' }), '节点'),
+    paper.zotero?.itemKey
+      ? React.createElement(
+          'button',
+          {
+            className: 'pd-btn pd-btn-ghost',
+            onClick: pushToZotero,
+            disabled: pushing,
+            title: '把 core 核与笔记写成一条 note 回写到 Zotero',
+          },
+          pushing ? '回写中…' : '回写 Zotero',
+        )
+      : null,
     React.createElement(
       'button',
       {

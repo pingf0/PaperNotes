@@ -328,6 +328,13 @@ check('上传的图进了 figures', afterUpload.figures.some((fig) => fig.file =
   check('模型列表：自定义模型出现在会话可选项里', Boolean(custom && custom.models.some((item) => item.id === 'm-kimi')), JSON.stringify(custom));
   const dirs = await json('/fs/list');
   check('目录浏览：返回子目录与父目录', Array.isArray(dirs.payload.dirs) && typeof dirs.payload.path === 'string', dirs.payload.path);
+  // Zotero：没启动时 status 要给出可读原因；items 回 502 而不是 500
+  const zotero = await json('/zotero/status');
+  check('Zotero：未启动时给出可读状态', typeof zotero.payload.ok === 'boolean' && (zotero.payload.ok || typeof zotero.payload.error === 'string'), JSON.stringify(zotero.payload).slice(0, 60));
+  const zoteroItems = await json('/zotero/items?q=');
+  check('Zotero：连不上时回 502 且带原因', zoteroItems.status === 502 || zoteroItems.payload.items !== undefined, String(zoteroItems.status));
+  const note = await json('/zotero/note', { method: 'POST', body: { id: doc.id, itemKey: 'ABCD1234', html: '<p>x</p>' } });
+  check('Zotero：没配 Web API 时回写要报错', note.status === 502, String(note.payload.error ?? '').slice(0, 60));
   const pick = await json('/fs/pick-directory', { method: 'POST' });
   check('系统目录对话框：无 Electron 时优雅回 501', pick.status === 501 || pick.status === 200, String(pick.status));
   const bad = await json('/settings/test', { method: 'POST', body: { baseUrl: '', model: '' } });

@@ -33,6 +33,8 @@ export function defaultSettings() {
     /** 默认用哪个自定义模型（空 = 用 DSH 自带模型） */
     activeModelId: '',
     temperature: 0.5,
+    /** Zotero 回写笔记用（本地接口只读，写必须走官方 Web API） */
+    zotero: { userId: '', apiKey: '' },
   };
 }
 
@@ -81,6 +83,7 @@ export async function readSettings() {
       ...parsed,
       prompts: { ...base.prompts, ...(parsed.prompts ?? {}) },
       models: Array.isArray(parsed.models) ? parsed.models.map(normalizeModel) : [],
+      zotero: { ...base.zotero, ...(parsed.zotero ?? {}) },
     };
     return cachedSettings;
   } catch {
@@ -98,6 +101,7 @@ export async function writeSettings(patch) {
     ...current,
     ...patch,
     prompts: { ...current.prompts, ...(patch.prompts ?? {}) },
+    zotero: { ...current.zotero, ...(patch.zotero ?? {}) },
   };
   // 模型列表：整表替换，但被打码的 key 视为"没改"，沿用旧值
   if (Array.isArray(patch.models)) {
@@ -134,6 +138,11 @@ export function maskSettings(settings) {
   return {
     ...settings,
     models: (settings.models ?? []).map((item) => ({ ...item, apiKey: maskKey(item.apiKey), hasKey: String(item.apiKey ?? '').length > 0 })),
+    zotero: {
+      userId: settings.zotero?.userId ?? '',
+      apiKey: maskKey(settings.zotero?.apiKey),
+      hasKey: String(settings.zotero?.apiKey ?? '').length > 0,
+    },
     presets: PRESETS,
   };
 }

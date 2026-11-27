@@ -35,6 +35,7 @@ export function PaperDesk({ registerStyle }) {
   /** 刚导入的论文 id：打开后自动整理一次布局。 */
   const [tidyAfterImport, setTidyAfterImport] = useState(null);
   const [importing, setImporting] = useState(null);
+  const [zoteroOpen, setZoteroOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [compareIds, setCompareIds] = useState(null);
   const [renaming, setRenaming] = useState(null);
@@ -155,7 +156,8 @@ export function PaperDesk({ registerStyle }) {
             ? React.createElement('button', { key: 'cmp', className: 'pd-btn', onClick: () => setCompareIds([...selected]) }, React.createElement(Icon, { name: 'compare' }), `对比 ${selected.length} 篇`)
             : null,
           React.createElement('button', { key: 'sort', className: 'pd-btn pd-btn-ghost', onClick: () => setSort(sort === 'recent' ? 'stale' : 'recent') }, sort === 'recent' ? '排序：最近打开' : '排序：最久没看'),
-          React.createElement('button', { key: 'imp', className: 'pd-btn pd-btn-primary', onClick: () => fileInput.current?.click() }, React.createElement(Icon, { name: 'plus' }), '导入论文'),
+          React.createElement('button', { key: 'zotero', className: 'pd-btn', onClick: () => setZoteroOpen(true), title: '从 Zotero 导入带 PDF 的文献' }, '从 Zotero 导入'),
+      React.createElement('button', { key: 'imp', className: 'pd-btn pd-btn-primary', onClick: () => fileInput.current?.click() }, React.createElement(Icon, { name: 'plus' }), '导入论文'),
         ]
       : null,
     React.createElement('button', { className: 'pd-btn pd-btn-ghost', onClick: () => setShowSettings(true), title: '设置数据目录' }, React.createElement(Icon, { name: 'gear' })),
@@ -392,6 +394,18 @@ export function PaperDesk({ registerStyle }) {
       })
     : null;
 
+  const zoteroMask = zoteroOpen
+    ? React.createElement(ZoteroModal, {
+        onClose: () => setZoteroOpen(false),
+        onBusy: setImporting,
+        onImported: async (id) => {
+          setZoteroOpen(false);
+          await refresh();
+          setPaperId(id);
+        },
+      })
+    : null;
+
   const renameMask = renaming
     ? React.createElement(RenameModal, {
         category: renaming,
@@ -464,6 +478,7 @@ export function PaperDesk({ registerStyle }) {
     contextMenu,
     importMask,
     settingsMask,
+    zoteroMask,
     renameMask,
     createMask,
   );
@@ -589,6 +604,7 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
         temperature: settings.temperature,
         persona: settings.persona,
         prompts: settings.prompts,
+        zotero: settings.zotero,
       });
       setSettings(saved);
       if (tab !== 'dir') onClose();
@@ -846,6 +862,63 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
         ),
       );
 
+  const zoteroPane = !settings
+    ? React.createElement('div', { className: 'pd-hint' }, '正在读取设置…')
+    : React.createElement(
+        'div',
+        null,
+        React.createElement(
+          'div',
+          { className: 'pd-hint' },
+          '读：Zotero 7 的本地接口（需在 Zotero「设置 → 高级」勾选允许本机通信）。写：官方 Web API，需要 userID 与 API key。',
+        ),
+        React.createElement(
+          'div',
+          { className: 'pd-field' },
+          React.createElement('span', { className: 'pd-field-label' }, 'Zotero userID'),
+          React.createElement('input', {
+            className: 'pd-input',
+            placeholder: '在 zotero.org/settings/keys 页面顶部能看到',
+            value: settings.zotero?.userId ?? '',
+            onChange: (event) => patch({ zotero: { ...(settings.zotero ?? {}), userId: event.target.value } }),
+          }),
+        ),
+        React.createElement(
+          'div',
+          { className: 'pd-field' },
+          React.createElement('span', { className: 'pd-field-label' }, 'Zotero API key'),
+          React.createElement('input', {
+            className: 'pd-input',
+            type: 'password',
+            placeholder: settings.zotero?.hasKey ? '已保存（留空则不修改）' : '只勾选写入权限即可',
+            value: settings.zotero?.apiKey ?? '',
+            onChange: (event) => patch({ zotero: { ...(settings.zotero ?? {}), apiKey: event.target.value } }),
+          }),
+        ),
+        React.createElement(
+          'button',
+          {
+            className: 'pd-btn pd-btn-sm',
+            onClick: async () => {
+              try {
+                const result = await api.zoteroStatus();
+                setTestResult({ id: 'zotero', ok: result.ok, ms: 0, text: result.ok ? `Zotero ${result.version} 已连接` : '', error: result.error });
+              } catch (e) {
+                setTestResult({ id: 'zotero', ok: false, error: e instanceof Error ? e.message : String(e) });
+              }
+            },
+          },
+          '检测 Zotero',
+        ),
+        testResult && testResult.id === 'zotero'
+          ? React.createElement(
+              'div',
+              { className: `pd-test-result${testResult.ok ? ' is-ok' : ''}` },
+              testResult.ok ? testResult.text : `失败：${testResult.error}`,
+            )
+          : null,
+      );
+
   const promptPane = !settings
     ? React.createElement('div', { className: 'pd-hint' }, '正在读取设置…')
     : React.createElement(
@@ -913,8 +986,13 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
       tabButton('dir', '数据目录'),
       tabButton('api', '模型'),
       tabButton('prompt', '提示词'),
+      tabButton('zotero', 'Zotero'),
     ),
-    React.createElement('div', { className: 'pd-settings-body' }, tab === 'dir' ? dirPane : tab === 'api' ? apiPane : promptPane),
+    React.createElement(
+      'div',
+      { className: 'pd-settings-body' },
+      tab === 'dir' ? dirPane : tab === 'api' ? apiPane : tab === 'prompt' ? promptPane : zoteroPane,
+    ),
     error ? React.createElement('div', { className: 'pd-error' }, error) : null,
     picking
       ? React.createElement(DirPicker, {
@@ -926,6 +1004,128 @@ function SettingsModal({ dir, llmReady, onClose, onSaved }) {
           },
         })
       : null,
+  );
+}
+
+/**
+ * 从 Zotero 导入：列出带 PDF 的文献，点一篇就拉字节走同一套抽取管线。
+ * @param {{ onClose: () => void, onImported: (paperId: string) => void, onBusy: (state: object|null) => void }} props
+ */
+function ZoteroModal({ onClose, onImported, onBusy }) {
+  const { useEffect, useState } = React;
+  const [status, setStatus] = useState(null);
+  const [items, setItems] = useState([]);
+  const [query, setQuery] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const load = async (q) => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await api.zoteroItems(q ?? '');
+      setItems(result.items ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .zoteroStatus()
+      .then((result) => {
+        if (!alive) return;
+        setStatus(result);
+        if (result.ok) load('');
+      })
+      .catch((e) => alive && setStatus({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const importItem = async (item) => {
+    onBusy({ name: item.title, phase: 'read', page: 0, total: 0, figures: 0 });
+    try {
+      const response = await fetch(api.zoteroFileUrl(item.attachmentKey));
+      if (!response.ok) throw new Error('取 Zotero 附件失败');
+      const blob = await response.blob();
+      const file = new File([blob], `${item.title.slice(0, 40)}.pdf`, { type: 'application/pdf' });
+      const extracted = await extractPaper(file, (progress) => onBusy({ name: item.title, ...progress }));
+      onBusy({ name: item.title, phase: 'understand', page: 0, total: extracted.pageCount, figures: extracted.figures.length });
+      const created = await api.importPaper({
+        title: item.title,
+        pages: extracted.pages,
+        figures: extracted.figures,
+        pdfBase64: extracted.pdfBase64,
+      });
+      // 记下来源，方便以后回写笔记
+      await api.patchPaper(created.id, { zotero: { itemKey: item.key, attachmentKey: item.attachmentKey } }).catch(() => undefined);
+      onBusy(null);
+      onImported(created.id);
+    } catch (e) {
+      onBusy(null);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return React.createElement(
+    Modal,
+    { title: '从 Zotero 导入', onClose, width: 720, footer: [React.createElement('button', { key: 'c', className: 'pd-btn', onClick: onClose }, '关闭')] },
+    status === null
+      ? React.createElement('div', { className: 'pd-hint' }, React.createElement(Spinner), ' 正在连接 Zotero…')
+      : status.ok === false
+        ? React.createElement(
+            'div',
+            null,
+            React.createElement('div', { className: 'pd-error' }, status.error ?? '连不上 Zotero'),
+            React.createElement(
+              'div',
+              { className: 'pd-hint' },
+              '请先启动 Zotero 7，并在「设置 → 高级」勾选「允许其他应用与本机 Zotero 通信」。',
+            ),
+          )
+        : React.createElement(
+            'div',
+            null,
+            React.createElement(
+              'div',
+              { className: 'pd-row' },
+              React.createElement('input', {
+                className: 'pd-input',
+                placeholder: '搜索标题 / 作者',
+                value: query,
+                onChange: (event) => setQuery(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') load(query);
+                },
+              }),
+              React.createElement('button', { className: 'pd-btn', onClick: () => load(query), disabled: loading }, loading ? '搜索中…' : '搜索'),
+            ),
+            React.createElement(
+              'div',
+              { className: 'pd-zotero-list' },
+              items.length === 0
+                ? React.createElement('div', { className: 'pd-hint' }, loading ? '读取中…' : '没有找到带 PDF 的文献')
+                : items.map((item) =>
+                    React.createElement(
+                      'div',
+                      { key: item.key, className: 'pd-zotero-row' },
+                      React.createElement(
+                        'div',
+                        { className: 'pd-zotero-main' },
+                        React.createElement('div', { className: 'pd-zotero-title' }, item.title),
+                        React.createElement('div', { className: 'pd-zotero-sub' }, [item.authors, item.year].filter(Boolean).join(' · ')),
+                      ),
+                      React.createElement('button', { className: 'pd-btn pd-btn-sm pd-btn-primary', onClick: () => importItem(item) }, '导入'),
+                    ),
+                  ),
+            ),
+            error ? React.createElement('div', { className: 'pd-error' }, error) : null,
+          ),
   );
 }
 

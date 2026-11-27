@@ -617,7 +617,7 @@ if (textSpans > 0) {
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
   });
   await page.waitForTimeout(250);
-  const bar = await page.locator('.pd-selection-bar').count();
+  const bar = await page.locator('.pd-selection-pop').count();
   if (bar === 0) {
     const diag = await page.evaluate(() => ({
       selLen: String(window.getSelection()?.toString() ?? '').trim().length,
@@ -630,6 +630,25 @@ if (textSpans > 0) {
     errors.push('划词后没有出现「问这段」工具条：' + JSON.stringify(diag));
   }
 }
+// 缩放后切走再回来：缩放与页码要记住
+const zoomedWidth = await page.locator('.pd-pdf-page').first().evaluate((el) => el.getBoundingClientRect().width);
+await page.waitForTimeout(500);
+await page.click('.pd-tab:nth-child(1)');
+await page.waitForTimeout(250);
+await page.click('.pd-tab:nth-child(4)');
+await page.waitForSelector('.pd-pdf-page', { timeout: 10000 }).catch(() => errors.push('切回原文后页面没重新出现'));
+await page.waitForTimeout(900);
+const restoredWidth = await page.locator('.pd-pdf-page').first().evaluate((el) => el.getBoundingClientRect().width);
+if (!(restoredWidth > zoomedWidth * 0.92)) {
+  errors.push(`切回原文后缩放松回了：${Math.round(zoomedWidth)} → ${Math.round(restoredWidth)}`);
+}
+const savedPdf = await page.evaluate(async () => {
+  const state = await (await fetch('/dsh-paper-desk-4821/state')).json();
+  const id = state.papers[0]?.id;
+  const doc = (await (await fetch('/dsh-paper-desk-4821/paper?id=' + id)).json()).paper;
+  return doc.layout?.pdf ?? null;
+});
+if (!savedPdf || typeof savedPdf.zoom !== 'number') errors.push('PDF 视图状态没有落盘：' + JSON.stringify(savedPdf));
 await shot('04a-pdf-panel');
 // 框选配图：先选一个节点（框选结果要挂到它上面），再回原文页签框
 await page.click('.pd-node .pd-node-head');
@@ -940,8 +959,12 @@ await page.waitForTimeout(200);
   await page.waitForTimeout(150);
   await page.locator('.pd-tabs-inset .pd-tab', { hasText: '提示词' }).click();
   await page.waitForTimeout(150);
-  const promptPaneText = await page.locator('.pd-settings-body').innerText();
-  if (!promptPaneText.includes('角色设定')) errors.push('提示词页签没有渲染：' + promptPaneText.slice(0, 40));
+  const promptText = await page.locator('.pd-settings-body').innerText();
+  if (!promptText.includes('角色设定')) errors.push('提示词页签没有渲染：' + promptText.slice(0, 40));
+  await page.locator('.pd-tabs-inset .pd-tab', { hasText: 'Zotero' }).click();
+  await page.waitForTimeout(150);
+  const zoteroPaneText = await page.locator('.pd-settings-body').innerText();
+  if (!zoteroPaneText.includes('userID')) errors.push('Zotero 页签没有渲染：' + zoteroPaneText.slice(0, 40));
   await shot('02d-settings');
   await page.locator('.pd-modal-foot button', { hasText: '关闭' }).click();
   await page.waitForTimeout(150);

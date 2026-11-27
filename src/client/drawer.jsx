@@ -481,6 +481,9 @@ export function Drawer({ paper, selectedBlockId, tab, setTab, onUpdate, onSelect
         : tab === 'pdf'
           ? React.createElement(PdfPanel, {
               paperId: paper.id,
+              view: paper.layout?.pdf,
+              onViewChange: (next) =>
+                onUpdate({ layout: { ...(paper.layout ?? {}), pdf: next } }),
               picking: picking && Boolean(selectedBlockId),
               onTogglePicking: () => {
                 if (!selectedBlockId) {

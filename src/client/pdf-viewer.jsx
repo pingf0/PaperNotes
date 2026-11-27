@@ -140,17 +140,19 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
         context.fillStyle = '#ffffff';
         context.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvasContext: context, viewport }).promise;
-        // 文本层：把每个文字片段按 PDF 坐标铺成透明 span，浏览器就能选词、复制、做划词提问
+        // 文本层：用**CSS 尺寸**的视口算坐标（渲染画布是 2 倍像素，直接拿它的坐标会整体放大一倍，
+        // 表现就是"没放大时一选一大块、放大后文字跑到层外面选不到"）。
+        const cssViewport = page.getViewport({ scale: width / base.width });
         const textContent = await page.getTextContent();
         if (cancelled) return;
         const spans = [];
         textContent.items.forEach((item, itemIndex) => {
           if (!item.str || item.str.trim().length === 0) return;
-          const tr = multiplyMatrix(viewport.transform, item.transform);
-          const fontSize = Math.hypot(tr[2], tr[3]) || item.height * viewport.scale;
+          const tr = multiplyMatrix(cssViewport.transform, item.transform);
+          const fontSize = Math.hypot(tr[2], tr[3]) || item.height * cssViewport.scale;
           const left = tr[4];
           const top = tr[5] - fontSize;
-          const targetWidth = item.width * viewport.scale;
+          const targetWidth = item.width * cssViewport.scale;
           const naturalWidth = fontSize * item.str.length * 0.5;
           const scaleX = naturalWidth > 0 ? targetWidth / naturalWidth : 1;
           spans.push({
@@ -234,20 +236,28 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
  * 连续的 PDF 阅读面板（放在右侧栏里）。
  * @param {{ paperId: string }} props
  */
-export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking, onAskSelection }) {
+export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickBox, onTogglePicking, onAskSelection }) {
   const { useEffect, useRef, useState } = React;
   const [doc, setDoc] = useState(null);
   const [count, setCount] = useState(0);
   const [ratio, setRatio] = useState(1.294);
   const [baseWidth, setBaseWidth] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(() => (typeof view?.zoom === 'number' ? view.zoom : 1));
+  /**
+   * 已提交的缩放：页面按它渲染位图。连续缩放时先用 CSS `zoom` 拉伸（几乎零成本），
+   * 停手 180ms 后再真正重渲染 —— 这是"卡顿"的主要原因。
+   */
+  const [committedZoom, setCommittedZoom] = useState(() => (typeof view?.zoom === 'number' ? view.zoom : 1));
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef(null);
   /** 划词结果：{ text, x, y }（相对 .pd-pdf-wrap） */
   const [selection, setSelection] = useState(null);
-  const zoomRef = useRef(1);
+  /** 划词翻译：{ loading, text, error } */
+  const [translation, setTranslation] = useState(null);
+  const translateSeq = useRef(0);
+  const zoomRef = useRef(typeof view?.zoom === 'number' ? view.zoom : 1);
   const frameRef = useRef(0);
 
   /** 载入 PDF。 */
@@ -302,6 +312,20 @@ export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking,
           x: Math.min(Math.max(half, desired), Math.max(half, wrapBox.width - half)),
           y: Math.max(8, box.top - wrapBox.top - 44),
         });
+        // 选中即翻译（不用再点"翻译"）：序号防串台
+        const seq = translateSeq.current + 1;
+        translateSeq.current = seq;
+        setTranslation({ loading: true, text: '', error: '' });
+        api
+          .translate(text)
+          .then((result) => {
+            if (translateSeq.current !== seq) return;
+            setTranslation({ loading: false, text: result.text ?? '', error: '' });
+          })
+          .catch((e) => {
+            if (translateSeq.current !== seq) return;
+            setTranslation({ loading: false, text: '', error: e instanceof Error ? e.message : String(e) });
+          });
       }, 10);
     };
     const onDown = (event) => {
@@ -377,6 +401,56 @@ export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking,
     return () => element.removeEventListener('wheel', onWheel);
   }, []);
 
+  /** 缩放停手后再提交：期间只做 CSS 拉伸。 */
+  useEffect(() => {
+    if (Math.abs(zoom - committedZoom) < 0.001) return undefined;
+    const timer = window.setTimeout(() => setCommittedZoom(zoom), 180);
+    return () => window.clearTimeout(timer);
+  }, [zoom, committedZoom]);
+
+  /** 缩放变了也存一次（滚动时才存的话，只缩放不滚动会丢）。 */
+  useEffect(() => {
+    if (!onViewChange) return;
+    onViewChange({ zoom: committedZoom, page: 1 });
+    // page 由滚动那次覆盖，这里只保证 zoom 落盘
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [committedZoom]);
+
+  /** 视图状态（缩放 + 看到第几页）随论文存盘。 */
+  const viewSaveTimer = useRef(0);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !onViewChange) return undefined;
+    const save = () => {
+      const pages = [...element.querySelectorAll('.pd-pdf-page')];
+      const top = element.getBoundingClientRect().top + 8;
+      let current = 1;
+      pages.forEach((page, index) => {
+        if (page.getBoundingClientRect().top <= top) current = index + 1;
+      });
+      onViewChange({ zoom: committedZoom, page: current });
+    };
+    const onScroll = () => {
+      window.clearTimeout(viewSaveTimer.current);
+      viewSaveTimer.current = window.setTimeout(save, 500);
+    };
+    element.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      element.removeEventListener('scroll', onScroll);
+      window.clearTimeout(viewSaveTimer.current);
+    };
+  }, [onViewChange, committedZoom]);
+
+  /** 打开时恢复上次看到的那一页。 */
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (restoredRef.current || !element || !count || !view?.page) return;
+    restoredRef.current = true;
+    const target = element.querySelectorAll('.pd-pdf-page')[view.page - 1];
+    if (target) element.scrollTop = target.offsetTop - 8;
+  }, [count, view?.page]);
+
   /** 交给系统默认阅读器（原生渲染，最清晰）。 */
   const openExternally = async () => {
     setNote('');
@@ -388,52 +462,76 @@ export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking,
     }
   };
 
-  const contentWidth = Math.round(baseWidth * zoom);
+  const contentWidth = Math.round(baseWidth * committedZoom);
+  /** 连续缩放时的临时拉伸倍数（CSS zoom，Chromium 支持，不触发重排上面板级重渲染）。 */
+  const liveScale = committedZoom > 0 ? zoom / committedZoom : 1;
 
-  /** 划词后浮出的小工具条：问这段 / 翻译 / 复制。 */
+  /** 划词后自动弹出的翻译小窗（保留「问这段」）。 */
   const selectionBar = selection
     ? React.createElement(
         'div',
         {
-          className: 'pd-selection-bar',
+          className: 'pd-selection-pop',
           style: { left: selection.x, top: selection.y, transform: 'translateX(-50%)' },
         },
         React.createElement(
-          'button',
-          {
-            className: 'pd-btn pd-btn-sm pd-btn-primary',
-            onClick: () => {
-              onAskSelection?.(selection.text);
-              setSelection(null);
+          'div',
+          { className: 'pd-selection-head' },
+          React.createElement('span', null, '翻译'),
+          React.createElement(
+            'button',
+            {
+              className: 'pd-selection-close',
+              title: '关闭',
+              onClick: () => {
+                translateSeq.current += 1;
+                setSelection(null);
+                setTranslation(null);
+              },
             },
-          },
-          '问这段',
+            '×',
+          ),
         ),
         React.createElement(
-          'button',
-          {
-            className: 'pd-btn pd-btn-sm',
-            onClick: () => {
-              onAskSelection?.(`把下面这段翻译成中文，并解释关键术语（公式保留）：\n\n${selection.text}`);
-              setSelection(null);
-            },
-          },
-          '翻译',
+          'div',
+          { className: 'pd-selection-body' },
+          !translation
+            ? React.createElement(Spinner)
+            : translation.error
+              ? React.createElement('div', { className: 'pd-error' }, translation.error)
+              : translation.loading
+                ? React.createElement('div', { className: 'pd-hint' }, React.createElement(Spinner), ' 翻译中…')
+                : translation.text,
         ),
         React.createElement(
-          'button',
-          {
-            className: 'pd-btn pd-btn-sm pd-btn-ghost',
-            onClick: async () => {
-              try {
-                await navigator.clipboard.writeText(selection.text);
-              } catch {
-                /* 忽略 */
-              }
-              setSelection(null);
+          'div',
+          { className: 'pd-selection-actions' },
+          React.createElement(
+            'button',
+            {
+              className: 'pd-btn pd-btn-sm pd-btn-primary',
+              onClick: () => {
+                onAskSelection?.(selection.text);
+                setSelection(null);
+                setTranslation(null);
+              },
             },
-          },
-          '复制',
+            '问这段',
+          ),
+          React.createElement(
+            'button',
+            {
+              className: 'pd-btn pd-btn-sm pd-btn-ghost',
+              onClick: async () => {
+                try {
+                  await navigator.clipboard.writeText(selection.text);
+                } catch {
+                  /* 忽略 */
+                }
+              },
+            },
+            '复制原文',
+          ),
         ),
       )
     : null;
@@ -468,15 +566,23 @@ export function PdfPanel({ paperId, picking = false, onPickBox, onTogglePicking,
         ? React.createElement('div', { className: 'pd-empty' }, React.createElement(Spinner), ' 正在读取原文…')
         : error
           ? React.createElement('div', { className: 'pd-empty' }, error)
-          : Array.from({ length: count }, (_unused, index) =>
-              React.createElement(PdfPage, {
-                key: index,
-                doc,
-                index,
-                ratio,
-                width: contentWidth,
-                onPickBox: picking ? onPickBox : undefined,
-              }),
+          : React.createElement(
+              'div',
+              {
+                className: 'pd-pdf-pages',
+                // 连续缩放时先整体 CSS 拉伸（位图不重绘），停手后再按新宽度重渲染
+                style: { zoom: liveScale !== 1 ? liveScale : undefined },
+              },
+              ...Array.from({ length: count }, (_unused, index) =>
+                React.createElement(PdfPage, {
+                  key: index,
+                  doc,
+                  index,
+                  ratio,
+                  width: contentWidth,
+                  onPickBox: picking ? onPickBox : undefined,
+                }),
+              ),
             ),
     ),
   );
