@@ -601,11 +601,22 @@ if (!(afterZoom > beforeZoom * 1.1)) errors.push(`面板内放大没生效：${M
 await shot('04a-pdf-zoom');
 
 // 文本层：页面里应该铺出可选择的透明文字
+const textLayerDisplay = await page
+  .locator('.pd-text-layer')
+  .first()
+  .evaluate((el) => getComputedStyle(el).display)
+  .catch(() => 'missing');
+if (textLayerDisplay === 'none') errors.push('文本层被 display:none 藏掉了（选不了字）');
 const textSpans = await page.locator('.pd-text-layer span').count();
 if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段`);
 
 // 真实鼠标拖选：在一行文字上从行首拖到行尾，选区内容应当就是这一行的文字
 {
+  // 如果之前进过框选模式，先退出来（框选时文本层不接收指针事件）
+  if ((await page.locator('.pd-pdf-page.is-picking').count()) > 0) {
+    await page.locator('.pd-pdf-tools button', { hasText: /框选中/ }).click().catch(() => undefined);
+    await page.waitForTimeout(200);
+  }
   const rects = await page.evaluate(() => {
     const spans = [...document.querySelectorAll('.pd-text-layer span')];
     const scroll = document.querySelector('.pd-pdf-scroll')?.getBoundingClientRect();
@@ -641,7 +652,33 @@ if (textSpans < 20) errors.push(`PDF 文本层没有铺出来：${textSpans} 段
     };
   });
   if (!rects) {
-    errors.push('页面上没有找到可视的文字行，无法验证拖选');
+    const diag = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('.pd-text-layer span')];
+      const scroll = document.querySelector('.pd-pdf-scroll')?.getBoundingClientRect();
+      const boxes = all.slice(0, 5).map((span) => {
+        const box = span.getBoundingClientRect();
+        return [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)];
+      });
+      return {
+        spans: all.length,
+        scroll: scroll ? [Math.round(scroll.left), Math.round(scroll.top), Math.round(scroll.right), Math.round(scroll.bottom)] : null,
+        boxes,
+        missing: document.querySelectorAll('.pd-text-missing').length,
+        chain: (() => {
+          const span = all[0];
+          if (!span) return null;
+          const out = [];
+          let node = span;
+          for (let i = 0; i < 3 && node; i += 1) {
+            const cs = getComputedStyle(node);
+            out.push({ cls: node.className, display: cs.display, w: cs.width, h: cs.height, zoom: cs.zoom });
+            node = node.parentElement;
+          }
+          return out;
+        })(),
+      };
+    });
+    errors.push('页面上没有找到可视的文字行，无法验证拖选 ' + JSON.stringify(diag));
   } else {
     await page.mouse.move(rects.x1, rects.y1);
     await page.mouse.down();

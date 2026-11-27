@@ -536,6 +536,11 @@ export const CSS = `
 }
 .pd-pdf-canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
 /* 文本层：透明文字盖在画布上，负责选择与划词；框选模式下不拦事件 */
+.pd-text-missing {
+  position: absolute; left: 8px; bottom: 8px; z-index: 3;
+  padding: 3px 8px; border-radius: 6px; font-size: 10.5px;
+  background: rgba(0, 0, 0, .55); color: #fff; pointer-events: none;
+}
 .pd-text-layer {
   position: absolute; inset: 0; overflow: hidden; line-height: 1; z-index: 2;
   user-select: text; -webkit-user-select: text; cursor: text; pointer-events: auto;
@@ -545,7 +550,7 @@ export const CSS = `
   cursor: text; user-select: text; -webkit-user-select: text;
 }
 .pd-text-layer ::selection { background: rgba(47, 111, 208, .28); }
-.pd-pdf-page.is-picking .pd-text-layer { display: none; }
+.pd-pdf-page.is-picking .pd-text-layer { pointer-events: none; }
 /* 划词小工具条：预览一下选中的内容，再决定问/复制 */
 .pd-selection-pop {
   position: absolute; z-index: 30; width: 320px; max-width: calc(100% - 16px);

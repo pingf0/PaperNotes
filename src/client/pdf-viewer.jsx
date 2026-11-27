@@ -40,19 +40,29 @@ function clampZoom(value) {
  * @returns {string}
  */
 function collectSelectionText(wrap, range) {
-  const rect = range.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return '';
+  // 关键：用 range 的**每一行矩形**，而不是它的大外框。
+  // 大外框会把下一行末尾那一点点也框进来（用户看到只选了两行，复制却多出一截）。
+  const lineRects = [...range.getClientRects()].filter((rect) => rect.width > 1 && rect.height > 1);
+  if (lineRects.length === 0) return '';
   const spans = [...wrap.querySelectorAll('.pd-text-layer span')];
   const hits = [];
   for (const span of spans) {
     const box = span.getBoundingClientRect();
-    if (box.bottom < rect.top - 2 || box.top > rect.bottom + 2) continue;
-    if (box.right < rect.left - 2 || box.left > rect.right + 2) continue;
+    // 与任意一行矩形有实际重叠才算选中（纵向 2px 容差，横向 1px）
+    const overlapped = lineRects.some(
+      (rect) =>
+        box.bottom > rect.top + 1 &&
+        box.top < rect.bottom - 1 &&
+        box.right > rect.left - 1 &&
+        box.left < rect.right + 1,
+    );
+    if (!overlapped) continue;
     const text = String(span.textContent ?? '');
     if (text.trim().length === 0) continue;
     hits.push({ box, text, size: box.height });
   }
   if (hits.length === 0) return '';
+  // 按视觉顺序：先上后下，同一行内从左到右
   hits.sort((a, b) => (Math.abs(a.box.top - b.box.top) > 4 ? a.box.top - b.box.top : a.box.left - b.box.left));
   let out = '';
   let prev = null;
@@ -68,6 +78,7 @@ function collectSelectionText(wrap, range) {
   }
   return out.replace(/[\u200b-\u200d\ufeff]/g, '').replace(/[ \t]+/g, ' ').trim();
 }
+
 
 /**
  * 写剪贴板：优先 async clipboard，失败退回隐藏 textarea + execCommand。
@@ -130,6 +141,8 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
   const [box, setBox] = useState(null);
   /** 文本层的每一段（透明文字，用于选择 / 复制 / 划词提问）。 */
   const [textSpans, setTextSpans] = useState([]);
+  /** 'pending' | 'ok' | 'empty' | 'failed'：用来提示"这页没有可选文字" */
+  const [textState, setTextState] = useState('pending');
   const dragRef = useRef(null);
 
   /**
@@ -188,6 +201,53 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
     return () => observer.disconnect();
   }, []);
 
+
+  /** 文本层单独建：和画布渲染互不依赖，画布失败也还能选字。 */
+  useEffect(() => {
+    const holder = holderRef.current;
+    if (!holder || !doc || width === 0 || !visible) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await doc.getPage(index + 1);
+        if (cancelled) return;
+        const base = page.getViewport({ scale: 1 });
+        // 用 CSS 尺寸的视口算坐标（渲染画布是 2 倍像素，直接拿它的坐标会整体翻倍）
+        const cssViewport = page.getViewport({ scale: width / base.width });
+        const textContent = await page.getTextContent();
+        if (cancelled) return;
+        const spans = [];
+        textContent.items.forEach((item, itemIndex) => {
+          if (!item.str || item.str.trim().length === 0) return;
+          const tr = multiplyMatrix(cssViewport.transform, item.transform);
+          const fontSize = Math.max(1, Math.hypot(tr[2], tr[3]) || item.height * cssViewport.scale);
+          const left = tr[4];
+          const top = tr[5] - fontSize;
+          const spanWidth = Math.max(1, item.width * cssViewport.scale);
+          spans.push({
+            key: itemIndex,
+            text: item.str,
+            style: {
+              left: `${left.toFixed(2)}px`,
+              top: `${top.toFixed(2)}px`,
+              width: `${spanWidth.toFixed(2)}px`,
+              height: `${(fontSize * 1.18).toFixed(2)}px`,
+              fontSize: `${fontSize.toFixed(2)}px`,
+              lineHeight: `${(fontSize * 1.18).toFixed(2)}px`,
+            },
+          });
+        });
+        setTextSpans(spans);
+        setTextState(spans.length > 0 ? 'ok' : 'empty');
+      } catch {
+        if (!cancelled) setTextState('failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, index, visible, width]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !doc || width === 0) return undefined;
@@ -211,35 +271,6 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
         context.fillStyle = '#ffffff';
         context.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvasContext: context, viewport }).promise;
-        // 文本层：用**CSS 尺寸**的视口算坐标（渲染画布是 2 倍像素，直接拿它的坐标会整体放大一倍，
-        // 表现就是"没放大时一选一大块、放大后文字跑到层外面选不到"）。
-        const cssViewport = page.getViewport({ scale: width / base.width });
-        const textContent = await page.getTextContent();
-        if (cancelled) return;
-        const spans = [];
-        textContent.items.forEach((item, itemIndex) => {
-          if (!item.str || item.str.trim().length === 0) return;
-          const tr = multiplyMatrix(cssViewport.transform, item.transform);
-          const fontSize = Math.max(1, Math.hypot(tr[2], tr[3]) || item.height * cssViewport.scale);
-          const left = tr[4];
-          const top = tr[5] - fontSize;
-          // 盒子按 PDF 给的文本宽度定死：选区命中就是这块文字本身，
-          // 不再用"字数 × 估算字宽"去拉伸（估大了就会一拖一大片）。
-          const width = Math.max(1, item.width * cssViewport.scale);
-          spans.push({
-            key: itemIndex,
-            text: item.str,
-            style: {
-              left: `${left.toFixed(2)}px`,
-              top: `${top.toFixed(2)}px`,
-              width: `${width.toFixed(2)}px`,
-              height: `${(fontSize * 1.18).toFixed(2)}px`,
-              fontSize: `${fontSize.toFixed(2)}px`,
-              lineHeight: `${(fontSize * 1.18).toFixed(2)}px`,
-            },
-          });
-        });
-        if (!cancelled) setTextSpans(spans);
       } catch {
         /* 单页失败不影响其它页 */
       }
@@ -290,6 +321,13 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
       },
     },
     React.createElement('canvas', { ref: canvasRef, className: 'pd-pdf-canvas' }),
+    textState === 'empty' || textState === 'failed'
+      ? React.createElement(
+          'div',
+          { className: 'pd-text-missing' },
+          textState === 'failed' ? '这一页的文字层加载失败' : '这一页没有可选文字（可能是扫描件）',
+        )
+      : null,
     textSpans.length > 0
       ? React.createElement(
           'div',

@@ -945,6 +945,28 @@ bbox 是整页 612×792），所以"用 XObject bbox 精确框定图"这条路�
 验证：预览台用真实鼠标在**用户的 WeaveRec PDF** 上拖选，断言工具条文本包含该行首个词、且拦截
 `navigator.clipboard.writeText` 后点「复制」能拿到同一段文字（之前这条断言根本过不了）。
 
+## 0.16.4：文本层被全局 `display:none` 干掉（"文字选不了"的真凶）
+
+用户报"没开框选也选不了字"。查下来是我自己上一版改 CSS 时把规则改坏了：
+
+```css
+.pd-pdf-page.is-picking .pd-text-missing { ... }   /* 本该是 .pd-text-layer */
+...
+.pd-text-layer { display: none; }                  /* 于是全站隐藏了文本层 */
+```
+
+`.pd-text-layer { display: none; }` 是**无条件**的，所以任何页面都选不了字，和框选模式无关。
+
+修法：
+
+- 恢复 `.pd-pdf-page.is-picking .pd-text-layer { pointer-events: none; }`（框选时只是不接收指针事件，不再隐藏）；
+- 删掉那条全局 `display:none` 与错位的 `.pd-text-missing` 规则；
+- 文本层拆成独立 effect：画布渲染失败也照样能选字；`getTextContent` 为空时页面上显示"这一页没有可选文字（可能是扫描件）"；
+- 预览台加一条防回归断言：`.pd-text-layer` 的计算 `display` 不能是 `none`。
+
+另外修了"选到下一行末尾"的问题：选区文本改用 `range.getClientRects()` 的**逐行矩形**取文本块，
+而不是整个选区的大外框（外框会把下一行末尾那一点点也框进来）。
+
 ## 当前安装版本
 
 `dsh-paper-desk@0.14.6`（generation `…+0.14.6+f784aa1b2ce8`，2026-11-27 02:2x 装入）。
