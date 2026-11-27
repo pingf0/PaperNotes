@@ -176,7 +176,6 @@ export const api = {
   },
   listDirs: (path) => request(`/fs/list?path=${encodeURIComponent(path ?? '')}`),
   pickDirectory: () => request('/fs/pick-directory', { method: 'POST' }),
-  translate: (text, model) => request('/translate', { method: 'POST', body: { text, model } }),
   zoteroStatus: () => request('/zotero/status'),
   zoteroItems: (q) => request(`/zotero/items?q=${encodeURIComponent(q ?? '')}`),
   zoteroFileUrl: (key) => `${PREFIX}/zotero/file?key=${encodeURIComponent(key)}`,

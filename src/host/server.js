@@ -20,7 +20,6 @@ import {
   compareChat,
   compareChatStream,
   condenseNote,
-  translateSelection,
 } from './chat.js';
 import { reanalyzePaper, migrateAnnotations, structurePaper } from './import.js';
 import { maskSettings, readSettings, writeSettings } from './settings.js';
@@ -523,12 +522,6 @@ export function createServer(ctx, prefix) {
         } catch (error) {
           return sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) });
         }
-      }
-
-      if (path === '/translate' && method === 'POST') {
-        const body = JSON.parse(await readBody(req));
-        const result = await translateSelection(ctx, body.text, { model: body.model });
-        return sendJson(res, result.ok ? 200 : 502, result);
       }
 
       if (path === '/fs/pick-directory' && method === 'POST') {

@@ -541,33 +541,23 @@ export const CSS = `
   user-select: text; -webkit-user-select: text; cursor: text;
 }
 .pd-text-layer span {
-  position: absolute; color: transparent; white-space: pre; transform-origin: 0 0;
-  cursor: text;
+  position: absolute; color: transparent; white-space: pre; overflow: hidden;
+  cursor: text; contain: layout style;
 }
 .pd-text-layer ::selection { background: rgba(47, 111, 208, .28); }
 .pd-pdf-page.is-picking .pd-text-layer { display: none; }
-/* 划词翻译小窗 */
+/* 划词小工具条：预览一下选中的内容，再决定问/复制 */
 .pd-selection-pop {
-  position: absolute; z-index: 30; width: 330px; max-width: calc(100% - 16px);
+  position: absolute; z-index: 30; width: 320px; max-width: calc(100% - 16px);
   border-radius: 10px; background: var(--dsw-alias-bg-layer-2, #fff);
   border: 1px solid var(--dsw-alias-border-l2, #dcdcdc);
   box-shadow: 0 10px 26px rgba(16, 32, 56, .18);
   animation: pd-pop .14s ease-out; overflow: hidden;
 }
-.pd-selection-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 10px; font-size: 11px; letter-spacing: .02em;
-  color: var(--dsw-alias-label-tertiary, #8a8a8a);
-  border-bottom: 1px solid var(--dsw-alias-border-l1, #eee);
-}
-.pd-selection-close {
-  border: 0; background: transparent; cursor: pointer; font-size: 14px; line-height: 1;
-  color: var(--dsw-alias-label-tertiary, #8a8a8a); padding: 0 2px;
-}
-.pd-selection-close:hover { color: var(--dsw-alias-label-primary, #222); }
-.pd-selection-body {
-  padding: 9px 10px; font-size: 12.5px; line-height: 1.75; max-height: 190px; overflow-y: auto;
-  color: var(--dsw-alias-label-primary, #222); white-space: pre-wrap; word-break: break-word;
+.pd-selection-preview {
+  padding: 8px 10px; font-size: 11.5px; line-height: 1.6; max-height: 96px; overflow: hidden;
+  color: var(--dsw-alias-label-secondary, #555);
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
 }
 .pd-selection-actions {
   display: flex; gap: 6px; padding: 6px 10px 8px; justify-content: flex-end;

@@ -441,39 +441,3 @@ export async function compareChatStream(ctx, papers, history, message, options =
     options.onEvent,
   );
 }
-
-
-/**
- * 划词翻译：把选中的一段英文译成中文，术语保留英文原词。
- * 只做一件事，输出直接是译文（不加解释），这样弹窗里读起来像 Zotero 的翻译插件。
- *
- * @param ctx 宿主上下文
- * @param {string} text 选中的原文
- * @param {{ model?: object }} [options]
- * @returns {Promise<{ok:boolean, text?:string, error?:string}>}
- */
-export async function translateSelection(ctx, text, options = {}) {
-  const source = String(text ?? '').trim();
-  if (source.length === 0) return { ok: false, error: '没有选中内容' };
-  if (source.length > 4000) return { ok: false, error: '选中内容太长（超过 4000 字）' };
-  const settings = await readSettings().catch(() => undefined);
-  const persona = String(settings?.persona ?? '').trim();
-  const system = [
-    '你是学术论文翻译助手。把用户给的英文片段译成简体中文。',
-    '要求：术语保留英文原词（可写成"中文（English）"）；公式、符号、引用编号原样保留；',
-    '只输出译文本身，不要解释、不要加"翻译如下"之类的前缀，不要 markdown 围栏。',
-    persona.length > 0 ? `用户偏好：${persona}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  const result = await complete(ctx, {
-    system,
-    messages: [{ role: 'user', content: source }],
-    temperature: 0.2,
-    maxTokens: 1200,
-    timeoutMs: 60_000,
-    model: options.model,
-  });
-  if (!result.ok) return { ok: false, error: result.error };
-  return { ok: true, text: String(result.text ?? '').trim() };
-}

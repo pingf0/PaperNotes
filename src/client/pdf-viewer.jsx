@@ -149,20 +149,22 @@ function PdfPage({ doc, index, ratio, width, onPickBox }) {
         textContent.items.forEach((item, itemIndex) => {
           if (!item.str || item.str.trim().length === 0) return;
           const tr = multiplyMatrix(cssViewport.transform, item.transform);
-          const fontSize = Math.hypot(tr[2], tr[3]) || item.height * cssViewport.scale;
+          const fontSize = Math.max(1, Math.hypot(tr[2], tr[3]) || item.height * cssViewport.scale);
           const left = tr[4];
           const top = tr[5] - fontSize;
-          const targetWidth = item.width * cssViewport.scale;
-          const naturalWidth = fontSize * item.str.length * 0.5;
-          const scaleX = naturalWidth > 0 ? targetWidth / naturalWidth : 1;
+          // 盒子按 PDF 给的文本宽度定死：选区命中就是这块文字本身，
+          // 不再用"字数 × 估算字宽"去拉伸（估大了就会一拖一大片）。
+          const width = Math.max(1, item.width * cssViewport.scale);
           spans.push({
             key: itemIndex,
             text: item.str,
             style: {
-              left: `${left}px`,
-              top: `${top}px`,
-              fontSize: `${fontSize}px`,
-              transform: `scaleX(${scaleX})`,
+              left: `${left.toFixed(2)}px`,
+              top: `${top.toFixed(2)}px`,
+              width: `${width.toFixed(2)}px`,
+              height: `${(fontSize * 1.18).toFixed(2)}px`,
+              fontSize: `${fontSize.toFixed(2)}px`,
+              lineHeight: `${(fontSize * 1.18).toFixed(2)}px`,
             },
           });
         });
@@ -254,9 +256,6 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
   const scrollRef = useRef(null);
   /** 划词结果：{ text, x, y }（相对 .pd-pdf-wrap） */
   const [selection, setSelection] = useState(null);
-  /** 划词翻译：{ loading, text, error } */
-  const [translation, setTranslation] = useState(null);
-  const translateSeq = useRef(0);
   const zoomRef = useRef(typeof view?.zoom === 'number' ? view.zoom : 1);
   const frameRef = useRef(0);
 
@@ -312,20 +311,7 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
           x: Math.min(Math.max(half, desired), Math.max(half, wrapBox.width - half)),
           y: Math.max(8, box.top - wrapBox.top - 44),
         });
-        // 选中即翻译（不用再点"翻译"）：序号防串台
-        const seq = translateSeq.current + 1;
-        translateSeq.current = seq;
-        setTranslation({ loading: true, text: '', error: '' });
-        api
-          .translate(text)
-          .then((result) => {
-            if (translateSeq.current !== seq) return;
-            setTranslation({ loading: false, text: result.text ?? '', error: '' });
-          })
-          .catch((e) => {
-            if (translateSeq.current !== seq) return;
-            setTranslation({ loading: false, text: '', error: e instanceof Error ? e.message : String(e) });
-          });
+
       }, 10);
     };
     const onDown = (event) => {
@@ -466,7 +452,7 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
   /** 连续缩放时的临时拉伸倍数（CSS zoom，Chromium 支持，不触发重排上面板级重渲染）。 */
   const liveScale = committedZoom > 0 ? zoom / committedZoom : 1;
 
-  /** 划词后自动弹出的翻译小窗（保留「问这段」）。 */
+  /** 划词后的小工具条：带去会话提问，或复制原文。 */
   const selectionBar = selection
     ? React.createElement(
         'div',
@@ -476,32 +462,8 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
         },
         React.createElement(
           'div',
-          { className: 'pd-selection-head' },
-          React.createElement('span', null, '翻译'),
-          React.createElement(
-            'button',
-            {
-              className: 'pd-selection-close',
-              title: '关闭',
-              onClick: () => {
-                translateSeq.current += 1;
-                setSelection(null);
-                setTranslation(null);
-              },
-            },
-            '×',
-          ),
-        ),
-        React.createElement(
-          'div',
-          { className: 'pd-selection-body' },
-          !translation
-            ? React.createElement(Spinner)
-            : translation.error
-              ? React.createElement('div', { className: 'pd-error' }, translation.error)
-              : translation.loading
-                ? React.createElement('div', { className: 'pd-hint' }, React.createElement(Spinner), ' 翻译中…')
-                : translation.text,
+          { className: 'pd-selection-preview' },
+          selection.text.length > 160 ? `${selection.text.slice(0, 160)}…` : selection.text,
         ),
         React.createElement(
           'div',
@@ -513,7 +475,6 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
               onClick: () => {
                 onAskSelection?.(selection.text);
                 setSelection(null);
-                setTranslation(null);
               },
             },
             '问这段',
@@ -521,16 +482,22 @@ export function PdfPanel({ paperId, view, onViewChange, picking = false, onPickB
           React.createElement(
             'button',
             {
-              className: 'pd-btn pd-btn-sm pd-btn-ghost',
+              className: 'pd-btn pd-btn-sm',
               onClick: async () => {
                 try {
                   await navigator.clipboard.writeText(selection.text);
                 } catch {
                   /* 忽略 */
                 }
+                setSelection(null);
               },
             },
-            '复制原文',
+            '复制',
+          ),
+          React.createElement(
+            'button',
+            { className: 'pd-btn pd-btn-sm pd-btn-ghost', onClick: () => setSelection(null) },
+            '关闭',
           ),
         ),
       )
